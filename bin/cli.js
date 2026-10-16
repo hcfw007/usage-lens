@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { openReadOnly, dispose, loadRows, resolveCCSwitchDb, OPENCODE_DB } from '../lib/db.js';
+import { openReadOnly, dispose, loadRows, loadIntradayRows, resolveCCSwitchDb, OPENCODE_DB } from '../lib/db.js';
 import { aggregate, withSessionTitles, METRICS } from '../lib/aggregate.js';
 import { renderTable } from '../lib/render.js';
 
@@ -67,6 +67,16 @@ async function readRows(filters) {
   }
 }
 
+async function readIntraday(date, filters) {
+  const dbPath = await resolveCCSwitchDb(filters.db);
+  const db = await openReadOnly(dbPath);
+  try {
+    return loadIntradayRows(db, { date });
+  } finally {
+    await dispose(db);
+  }
+}
+
 async function writeHtmlReport(opts) {
   const { buildReport, reportWindow, REPORT_WINDOW_DAYS } = await import('../lib/report.js');
   const { start, end, clamped } = reportWindow(opts);
@@ -74,10 +84,11 @@ async function writeHtmlReport(opts) {
 
   const rows = await readRows({ ...opts, from: start, to: end });
   if (!rows.length) { console.log(`no data between ${start} and ${end}`); return; }
+  const intraday = await readIntraday(end, opts);
 
   const sessions = await withSessionTitles(aggregate(rows, 'session'), () => openReadOnly(OPENCODE_DB));
   const titles = new Map(sessions.filter(s => s.title).map(s => [s.key, s.title]));
-  const html = await buildReport(rows, { start, end, titles });
+  const html = await buildReport(rows, { start, end, titles, intraday });
 
   const { writeFile } = await import('node:fs/promises');
   const out = opts.out ?? 'cc-usage-report.html';

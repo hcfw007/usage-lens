@@ -354,7 +354,24 @@ function decodeRows(data) {
     requests, input, output, cacheRead, cacheCreation, cost,
   })) : [];
 }
+function slotRange(slot) {
+  const clock = minutes => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  return `${clock(slot * 30)}–${clock((slot + 1) * 30)}`;
+}
+function decodeIntraday(data) {
+  if (!data) return [];
+  const buckets = Array.from({ length: 48 }, (_, slot) => ({
+    ...zero(slot), slot, date: data.end, key: slotRange(slot),
+  }));
+  for (const [slot, a, m, s, requests, input, output, cacheRead, cacheCreation, cost] of data.intraday ?? []) {
+    add(buckets[slot], {
+      requests, input, output, cacheRead, cacheCreation, cost,
+    });
+  }
+  return buckets;
+}
 let ROWS = decodeRows(DATA);
+let INTRADAY = decodeIntraday(DATA);
 
 const state = { start: null, end: null, metric: 'real', sort: {} };
 
@@ -532,7 +549,7 @@ function niceMax(v) {
   return [1, 2, 2.5, 5, 10].map(k => k * p).find(x => x >= v);
 }
 
-function renderChart(days) {
+function renderChart(days, { intraday = false } = {}) {
   const segs = SEGMENTS[state.metric];
   const usd = Boolean(METRICS[state.metric].usd);
   const W = 1000, H = 300, L = 54, R = 6, T = 12, B = 40;
@@ -541,10 +558,10 @@ function renderChart(days) {
   const step = iw / days.length;
   const bw = Math.max(Math.min(step * 0.62, 34), 2);
   const y = v => T + ih - (v / max) * ih;
-  const every = Math.ceil(days.length / 15);
+  const every = intraday ? 6 : Math.ceil(days.length / 15);
 
-  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="每日 ${state.metric} 用量柱状图">`;
-  days.forEach((d, i) => {
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${intraday ? '当天每30分钟' : '每日'} ${state.metric} 用量柱状图">`;
+  if (!intraday) days.forEach((d, i) => {
     const wd = new Date(d.key + 'T00:00:00Z').getUTCDay();
     if (wd === 0 || wd === 6) s += `<rect x="${L + i * step}" y="${T}" width="${step}" height="${ih}" fill="var(--tint)"/>`;
   });
@@ -565,10 +582,11 @@ function renderChart(days) {
       }
     }
     const isLast = i === days.length - 1;
-    if (i % every === 0 || (isLast && i % every >= Math.ceil(every / 2) + 1)) {
+    if (i % every === 0 || (!intraday && isLast && i % every >= Math.ceil(every / 2) + 1)) {
       const cx = (L + i * step + step / 2).toFixed(1);
-      s += `<text x="${cx}" y="${H - 22}" text-anchor="middle" font-size="11" font-family="var(--mono)" fill="var(--ink2)">${d.key.slice(5)}</text>`;
-      s += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--ink3)">${weekday(d.key)}</text>`;
+      const label = intraday ? `${String(Math.floor(d.slot / 2)).padStart(2, '0')}:00` : d.key.slice(5);
+      s += `<text x="${cx}" y="${H - 22}" text-anchor="middle" font-size="11" font-family="var(--mono)" fill="var(--ink2)">${label}</text>`;
+      if (!intraday) s += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--ink3)">${weekday(d.key)}</text>`;
     }
   });
   days.forEach((d, i) => {
@@ -577,17 +595,18 @@ function renderChart(days) {
   s += '</svg><div class="tip" id="tip" role="tooltip"></div>';
   $('chart').innerHTML = s;
   $('legend').innerHTML = segs.map(([name, , color]) => `<span><i style="background:${color}"></i>${name}</span>`).join('') +
-    '<span><i style="background:var(--tint)"></i>周末</span>';
-  bindTip(days);
+    (intraday ? '<span>每柱 30 分钟</span>' : '<span><i style="background:var(--tint)"></i>周末</span>');
+  bindTip(days, { intraday });
 }
 
-function bindTip(days) {
+function bindTip(days, { intraday = false } = {}) {
   const tip = $('tip'), box = $('chart');
   box.querySelectorAll('.hit').forEach(el => {
     el.onmouseenter = () => {
       const d = days[Number(el.dataset.i)];
       const line = (k, v) => `<div><span>${k}</span><span>${v}</span></div>`;
-      tip.innerHTML = `<b>${d.key} 周${weekday(d.key)}</b>` +
+      const heading = intraday ? `${d.date} · ${d.key}` : `${d.key} 周${weekday(d.key)}`;
+      tip.innerHTML = `<b>${heading}</b>` +
         (d.requests
           ? line('请求', d.requests.toLocaleString()) + line('real', fmtTok(METRICS.real.fn(d))) +
             line('fresh', fmtTok(METRICS.fresh.fn(d))) + line('output', fmtTok(d.output)) +
@@ -684,6 +703,8 @@ function update() {
   writeHash();
   const rows = inRange();
   const days = dayBuckets(rows);
+  const isIntraday = state.start === DATA.end && state.end === DATA.end;
+  const chartRows = isIntraday ? INTRADAY : days;
   const total = rows.reduce(add, zero('total'));
   const n = days.length;
   renderHead(total, n);
@@ -695,14 +716,14 @@ function update() {
     .map(r => ({ ...r, label: r.title || r.key }));
   const m = METRICS[state.metric];
   $('main').innerHTML =
-    section('01', '每日走势', '悬停查看当天明细', currentDef(m) +
+    section('01', isIntraday ? '当日走势' : '每日走势', isIntraday ? '每柱 30 分钟 · 悬停查看时段明细' : '悬停查看当天明细', currentDef(m) +
       '<div class="chart" id="chart"></div><div class="legend" id="legend"></div>') +
     foldSection('02', '按模型', '点击展开 · 命中率已排除缓存未上报', '<table id="t-models"></table>') +
     foldSection('03', '按会话', `点击展开 · 按 ${m.label} 取前 20`, '<table id="t-sessions"></table>') +
     foldSection('04', '按应用', '点击展开', '<table id="t-apps"></table>') +
     section('05', '口径说明', '每个数字是怎么算的', glossary());
 
-  renderChart(days);
+  renderChart(chartRows, { intraday: isIntraday });
   renderTable('t-models', group(rows, r => r.model), r => esc(r.key) + tag(r));
   renderTable('t-sessions', sessions, r =>
     (r.title ? esc(r.title) : `<span class="id">${esc(r.key)}</span>`) + tag(r) +
@@ -732,6 +753,7 @@ async function refreshLive() {
     if (!DATA) {
       DATA = fresh;
       ROWS = decodeRows(DATA);
+      INTRADAY = decodeIntraday(DATA);
       state.start = DATA.start;
       state.end = DATA.end;
       readHash();
@@ -740,6 +762,7 @@ async function refreshLive() {
       const span = daysBetween(state.start, state.end);
       DATA = fresh;
       ROWS = decodeRows(DATA);
+      INTRADAY = decodeIntraday(DATA);
       if (followedLatest) {
         state.end = DATA.end;
         state.start = shift(state.end, -(Math.min(span, 30) - 1));
