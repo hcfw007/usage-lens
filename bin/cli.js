@@ -9,7 +9,7 @@ Usage:
   ulens [dim] [options]
   ulens html [options]      self-contained HTML report (last 30 days, range picker inside)
                             --to sets the end day; --out sets the file path
-  ulens serve [options]     run a localhost backend; UI polls it every minute
+  ulens serve [options]     run a localhost backend; UI polls it every 5 minutes
 
 Dimensions:
   day        per day (default)
@@ -110,7 +110,7 @@ async function runServer(opts) {
   const { server, dbPath } = await startServer({ port, db: opts.db });
   console.log(`Usage Lens: http://127.0.0.1:${server.address().port}/`);
   console.log(`Database:   ${dbPath}`);
-  console.log('Auto-refresh: every 60 seconds');
+  console.log('Auto-refresh: every 5 minutes');
   const stop = () => server.close(() => process.exit(0));
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);

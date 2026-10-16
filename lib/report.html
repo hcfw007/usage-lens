@@ -699,7 +699,7 @@ function update() {
       '<div class="chart" id="chart"></div><div class="legend" id="legend"></div>') +
     foldSection('02', '按模型', '点击展开 · 命中率已排除缓存未上报', '<table id="t-models"></table>') +
     foldSection('03', '按会话', `点击展开 · 按 ${m.label} 取前 20`, '<table id="t-sessions"></table>') +
-    section('04', '按应用', '', '<table id="t-apps"></table>') +
+    foldSection('04', '按应用', '点击展开', '<table id="t-apps"></table>') +
     section('05', '口径说明', '每个数字是怎么算的', glossary());
 
   renderChart(days);
