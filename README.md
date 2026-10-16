@@ -43,21 +43,13 @@ ulens html --out ~/usage.html
 ### 实时本地页面
 
 ```bash
-ulens serve                 # http://127.0.0.1:4782，每分钟自动刷新，也可手动刷新
+ulens serve                 # 自动打开 http://127.0.0.1:4782，每分钟自动刷新，也可手动刷新
 ulens serve --db /path/to/cc-switch.db
 ```
 
-服务只监听本机回环地址，不会把数据库或用量数据上传。每次页面刷新都重新读取 cc-switch 数据库。
-
-也可以将**不含用量数据**的页面外壳部署到 GitHub Pages：
-
-```bash
-ulens pages --out docs/index.html
-ulens serve --origin https://<user>.github.io
-```
-
-Pages 页面从浏览器连接本机 `127.0.0.1:4782` 获取数据。服务端只允许配置的精确网页来源跨域读取；
-访问者需要在自己的电脑上运行后端。数据仅从本机返回给本机浏览器，不写入 GitHub。
+项目中的 HTML 是不含用量数据的模板，数据仅由同源的本机后端读取并返回给本机浏览器。
+服务只监听回环地址 `127.0.0.1`；不会将数据库或用量数据上传到 GitHub 或其他服务器。
+每次手动刷新或每分钟自动刷新时，后端都会重新读取 cc-switch 数据库。
 
 ### cc-switch 数据库位置
 

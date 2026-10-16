@@ -283,7 +283,6 @@
 <script>
 let DATA = /*__DATA__*/null;
 const LIVE_MODE = /*__LIVE__*/false;
-const API_BASE = /*__API_BASE__*/'';
 </script>
 <script>
 'use strict';
@@ -699,7 +698,7 @@ async function refreshLive() {
   const button = $('refresh-btn');
   button.disabled = true;
   try {
-    const response = await fetch(`${API_BASE}/api/data`, { cache: 'no-store' });
+    const response = await fetch('/api/data', { cache: 'no-store' });
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
       throw new Error(detail.error || `HTTP ${response.status}`);
