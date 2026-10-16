@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage Lens · cc-switch 用量透视</title>
+<style>
+  :root {
+    --paper: #f3eee4; --paper2: #e9e2d3; --ink: #1c1a16; --ink2: #4b463d; --ink3: #8b8476;
+    --rule: #d6cdbb; --rule2: #e3dbcb; --tint: #ebe4d4;
+    --blue: #23406b; --blue-soft: #23406b1c; --ghost: #b5a991;
+    --red: #b9412a; --green: #5a7340;
+    --serif: "Iowan Old Style", "New York", ui-serif, "Songti SC", "Source Han Serif SC", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #15140f; --paper2: #1d1b15; --ink: #ece5d6; --ink2: #bdb5a5; --ink3: #7f786b;
+      --rule: #363228; --rule2: #27241d; --tint: #211e17;
+      --blue: #8fb0de; --blue-soft: #8fb0de24; --ghost: #5f5848;
+      --red: #e2735a; --green: #9bb77d;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0; min-height: 100vh; color: var(--ink); font: 15px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .page { max-width: 1120px; margin: 0 auto; padding: 44px clamp(20px, 4vw, 48px) 80px; }
+
+  /* masthead */
+  .mast {
+    border-top: 3px solid var(--ink); padding-top: 16px;
+    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 32px;
+  }
+  .kicker { font: 600 11px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--red); margin-bottom: 12px; }
+  .mast h1 { font: 600 clamp(38px, 5.2vw, 58px)/1 var(--serif); letter-spacing: -.02em; margin: 0; }
+  .mast h1 i { font-weight: 400; font-size: .52em; color: var(--ink3); letter-spacing: 0; margin-left: 6px; }
+  .meta { font: 11.5px/1.75 var(--mono); color: var(--ink3); text-align: right; }
+  .rule2 { border: 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); height: 4px; margin: 18px 0 28px; }
+
+  /* lede */
+  .lede { font: 400 19px/1.8 var(--serif); color: var(--ink2); max-width: 46em; margin: 0 0 32px; }
+  .lede span { display: block; }
+  .lede b { font-weight: 600; color: var(--ink); font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; }
+  .lede b.red { color: var(--red); }
+
+  /* stat strip */
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  .stat { padding: 16px 18px 15px; border-left: 1px solid var(--rule); }
+  .stat:first-child { border-left: 0; padding-left: 0; }
+  .stat .k { font: 600 10.5px/1 var(--mono); letter-spacing: .15em; text-transform: uppercase; color: var(--ink3); }
+  .stat .v { font: 500 32px/1.15 var(--serif); margin-top: 9px; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -.01em; }
+  .stat .s { font-size: 12px; color: var(--ink3); margin-top: 3px; }
+  .stat.hot .v { color: var(--red); }
+  @media (max-width: 820px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stat, .stat:first-child { border-left: 0; padding-left: 0; border-top: 1px solid var(--rule2); }
+    .meta { text-align: left; }
+  }
+  /* toolbar */
+  .bar {
+    position: sticky; top: 0; z-index: 5; background: var(--paper);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 28px;
+    padding: 14px 0; margin-bottom: 8px; border-bottom: 1px solid var(--rule);
+  }
+  .grp { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .grp .lab { font: 600 10.5px/1 var(--mono); letter-spacing: .15em; text-transform: uppercase; color: var(--ink3); margin-right: 8px; }
+  .grp button {
+    font: 500 13px/1 var(--sans); color: var(--ink2); background: none; border: 0;
+    padding: 7px 10px; border-radius: 3px; cursor: pointer;
+  }
+  .grp button:hover { color: var(--ink); background: var(--tint); }
+  .grp button.on { color: var(--paper); background: var(--ink); }
+  .grp button:focus-visible, .dates input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+  .dates { display: flex; align-items: center; gap: 6px; font: 12px var(--mono); color: var(--ink3); }
+  .dates input {
+    font: 12.5px var(--mono); color: var(--ink); background: var(--paper2);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 5px 7px; color-scheme: light dark;
+  }
+  .bar .metric { margin-left: auto; }
+  @media (max-width: 820px) { .bar .metric { margin-left: 0; } }
+
+  /* sections */
+  section { margin-top: 46px; animation: rise .5s cubic-bezier(.2,.7,.2,1) both; }
+  section:nth-of-type(2) { animation-delay: .06s; } section:nth-of-type(3) { animation-delay: .12s; }
+  section:nth-of-type(4) { animation-delay: .18s; } section:nth-of-type(5) { animation-delay: .24s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  .sh { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--ink); padding-bottom: 8px; margin-bottom: 4px; }
+  .sh .no { font: 600 12px var(--mono); color: var(--red); }
+  .sh h2 { font: 600 24px/1.2 var(--serif); margin: 0; letter-spacing: -.01em; }
+  .sh small { margin-left: auto; font-size: 12.5px; color: var(--ink3); }
+
+  /* chart */
+  .chart { position: relative; margin-top: 14px; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart .bar-r { transform-box: fill-box; transform-origin: bottom; animation: grow .55s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes grow { from { transform: scaleY(0); } }
+  .chart .hit { fill: transparent; cursor: crosshair; }
+  .chart .hit:hover { fill: var(--blue-soft); }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12.5px; color: var(--ink2); margin-top: 6px; }
+  .legend i { display: inline-block; width: 14px; height: 9px; margin-right: 6px; vertical-align: 0; }
+  .tip {
+    position: absolute; pointer-events: none; z-index: 3; min-width: 190px;
+    background: var(--ink); color: var(--paper); border-radius: 3px; padding: 10px 12px;
+    font: 12px/1.7 var(--mono); box-shadow: 0 6px 22px #0003; opacity: 0; transition: opacity .12s;
+  }
+  .tip.show { opacity: 1; }
+  .tip b { font: 600 13px var(--sans); display: block; margin-bottom: 3px; }
+  .tip div { display: flex; justify-content: space-between; gap: 18px; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th {
+    font: 600 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink3);
+    text-align: right; padding: 12px 10px 9px; border-bottom: 1px solid var(--rule); cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  th:hover { color: var(--ink); } th.on { color: var(--blue); }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--rule2); font: 13px var(--mono); white-space: nowrap; }
+  td.on { color: var(--ink); font-weight: 600; background: var(--blue-soft); }
+  td.k { font: 14px/1.35 var(--sans); max-width: 470px; white-space: normal; }
+  td.k .t { display: block; color: var(--ink3); font-size: 12.5px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 470px; }
+  td.k .id { font: 11.5px var(--mono); color: var(--ink3); }
+  td.hot { color: var(--red); font-weight: 600; }
+  tbody tr:hover td { background: var(--tint); }
+  .tag { font: 11px var(--mono); margin-left: 8px; white-space: nowrap; }
+  .tag::before { content: "●"; margin-right: 4px; font-size: 8px; vertical-align: 1px; }
+  .tag.ok { color: var(--green); } .tag.no { color: var(--red); }
+  .share { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .share span { display: block; height: 5px; background: var(--blue); border-radius: 1px; }
+  .empty { padding: 48px 0; color: var(--ink3); font: 17px var(--serif); text-align: center; }
+
+  /* definitions */
+  .def { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 14px 0 2px; font-size: 13.5px; color: var(--ink2); }
+  .def-name { font: 600 13px var(--mono); color: var(--blue); }
+  .def p { margin: 0; flex-basis: 100%; }
+  code { font: 12.5px var(--mono); color: var(--ink); background: var(--tint); padding: 1px 6px; border-radius: 2px; }
+  .glossary { margin: 6px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); column-gap: 40px; }
+  .gl { padding: 16px 0 14px; border-bottom: 1px solid var(--rule2); break-inside: avoid; }
+  .gl dt { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .gl dt b { font: 600 15px var(--mono); }
+  .gl dt span { font: 16px var(--serif); color: var(--ink2); }
+  .gl.on dt b { color: var(--blue); }
+  .gl.on dt b::after { content: "当前"; font: 600 10px var(--sans); color: var(--paper); background: var(--blue); padding: 1px 5px; border-radius: 2px; margin-left: 8px; vertical-align: 2px; }
+  .gl dd { margin: 0; font-size: 13.5px; line-height: 1.7; color: var(--ink2); }
+  .gl dd p { margin: 6px 0 0; }
+  .gl em { font: normal 600 10.5px var(--mono); letter-spacing: .1em; color: var(--ink3); margin-right: 8px; }
+
+  footer { margin-top: 64px; padding-top: 14px; border-top: 3px solid var(--ink); columns: 2 320px; column-gap: 40px; font-size: 12.5px; color: var(--ink3); }
+  footer p { margin: 0 0 8px; break-inside: avoid; } footer b { color: var(--ink2); font-family: var(--mono); font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) { section, .chart .bar-r { animation: none; } }
+</style>
+<style>
+  /* A clean instrument panel: cool, precise, and deliberately not editorial. */
+  :root {
+    --paper: #eef2f4; --paper2: #f8fafb; --ink: #172a36; --ink2: #40535d; --ink3: #73838b;
+    --rule: #cbd5d9; --rule2: #e2e8ea; --tint: #e4edef;
+    --blue: #087f8c; --blue-soft: #087f8c18; --ghost: #b6c5c8;
+    --red: #c45b3e; --green: #287b62;
+    --serif: var(--sans);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #10191e; --paper2: #172329; --ink: #e3ecee; --ink2: #b3c1c5; --ink3: #84959b;
+      --rule: #34444a; --rule2: #26363c; --tint: #1b2b31;
+      --blue: #55c5c0; --blue-soft: #55c5c01c; --ghost: #50656a;
+      --red: #ee896b; --green: #75c6a6;
+    }
+  }
+  html { background: var(--paper); }
+  body { background-image: none; font-size: 14px; line-height: 1.55; }
+  .page { max-width: 1280px; padding-top: 30px; }
+  .mast { border-top: 0; padding: 0 0 20px; align-items: center; border-bottom: 1px solid var(--rule); }
+  .kicker { color: var(--blue); letter-spacing: .12em; margin-bottom: 7px; }
+  .mast h1 { font: 650 clamp(26px, 3vw, 34px)/1.15 var(--sans); letter-spacing: -.035em; }
+  .mast h1 i { font: 450 .58em/1 var(--sans); color: var(--ink3); margin-left: 10px; }
+  .meta { font: 11px/1.7 var(--mono); color: var(--ink3); }
+  .rule2 { display: none; }
+  .lede {
+    max-width: none; margin: 22px 0 20px; padding: 14px 18px;
+    background: var(--paper2); border: 1px solid var(--rule2); border-left: 3px solid var(--blue);
+    border-radius: 5px; color: var(--ink2); font: 14px/1.75 var(--sans);
+  }
+  .lede span { display: inline; }
+  .lede span + span::before { content: "  /  "; color: var(--ink3); padding: 0 6px; font: 12px var(--mono); }
+  .lede b { color: var(--ink); font: 650 14px var(--mono); }
+  .stats {
+    gap: 10px; border: 0; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 18px;
+  }
+  .stat, .stat:first-child {
+    min-width: 0; padding: 13px 15px; background: var(--paper2); border: 1px solid var(--rule2);
+    border-radius: 5px;
+  }
+  .stat .k { letter-spacing: .08em; }
+  .stat .v { margin-top: 7px; font: 600 clamp(20px, 2.3vw, 27px)/1.2 var(--mono); letter-spacing: -.045em; }
+  .stat .s { font-size: 11px; }
+  .stat.hot { border-color: color-mix(in srgb, var(--red) 40%, var(--rule2)); }
+  .stat.hot .v { color: var(--red); }
+  .bar {
+    top: 0; gap: 8px 20px; padding: 9px 12px; margin: 0 -12px 12px;
+    background: color-mix(in srgb, var(--paper) 94%, transparent); border: 1px solid var(--rule);
+    border-radius: 6px; backdrop-filter: blur(12px);
+  }
+  .grp .lab { margin-right: 5px; letter-spacing: .08em; }
+  .grp button { border-radius: 4px; padding: 7px 9px; }
+  .grp button:hover { background: var(--tint); }
+  .grp button.on { color: #fff; background: var(--blue); }
+  .dates input { background: var(--paper2); border-color: var(--rule); border-radius: 4px; }
+  section { margin-top: 22px; padding: 18px 20px 20px; background: var(--paper2); border: 1px solid var(--rule2); border-radius: 7px; }
+  .sh { align-items: center; gap: 10px; border: 0; margin: 0; padding: 0; }
+  .sh .no { min-width: 28px; padding: 4px 5px; text-align: center; color: var(--blue); background: var(--blue-soft); border-radius: 3px; font-size: 10px; }
+  .sh h2 { font: 620 16px/1.3 var(--sans); letter-spacing: -.01em; }
+  .sh small { font-size: 11px; }
+  .def { margin: 7px 0 0 38px; gap: 4px 10px; font-size: 12px; }
+  .def-name { font: 600 11px var(--mono); color: var(--blue); }
+  .def code { font-size: 11px; }
+  .def p { color: var(--ink3); }
+  .chart { margin-top: 12px; }
+  .chart .bar-r { animation-duration: .35s; }
+  .legend { margin: 4px 0 0 38px; gap: 14px; font-size: 11px; }
+  .legend i { border-radius: 2px; }
+  .tip { border-radius: 5px; }
+  .sh + table, section > table { margin-top: 9px; }
+  table { border-top: 1px solid var(--rule2); }
+  th { padding-top: 10px; letter-spacing: .07em; }
+  td { padding-top: 8px; padding-bottom: 8px; }
+  td.on { color: var(--blue); background: var(--blue-soft); }
+  .share span { background: var(--blue); }
+  .glossary { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); column-gap: 28px; }
+  .gl { padding: 13px 0; }
+  .gl dt b { font-size: 12px; }
+  .gl dt span { font: 600 13px var(--sans); color: var(--ink); }
+  .gl.on dt b::after { border-radius: 3px; background: var(--blue); }
+  .gl dd { font-size: 12px; line-height: 1.65; }
+  .gl em { letter-spacing: .04em; }
+  code { border-radius: 3px; }
+  footer { border-top: 1px solid var(--rule); font-size: 11px; }
+  @media (max-width: 820px) {
+    .page { padding: 20px 16px 50px; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stat, .stat:first-child { border: 1px solid var(--rule2); padding: 12px; }
+    .bar { position: static; margin: 0 0 12px; }
+    .bar .metric { margin-left: 0; }
+    section { padding: 14px 12px; overflow-x: auto; }
+    .sh small { max-width: 42%; text-align: right; }
+    .def { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { section, .chart .bar-r { animation: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div>
+      <div class="kicker">cc-switch · usage report</div>
+      <h1>Usage Lens<i>用量透视</i></h1>
+    </div>
+    <div class="meta" id="meta"></div>
+  </header>
+  <hr class="rule2">
+  <p class="lede" id="lede"></p>
+  <div class="stats" id="stats"></div>
+  <nav class="bar" id="bar" aria-label="统计口径"></nav>
+  <main id="main"></main>
+  <footer>
+    <p>数据来自 <b>~/.cc-switch/cc-switch.db</b>，生成时快照写入本页面；需要最新数据时重新运行 <b>ulens html</b>。</p>
+    <p>token 数由 cc-switch 从各工具的会话日志解析得到，不是上游计费接口的返回值。</p>
+  </footer>
+</div>
+<script>const DATA = /*__DATA__*/null;</script>
+<script>
+'use strict';
+const METRICS = {
+  real: {
+    label: 'real', zh: '真实消耗', fn: r => r.input + r.output + r.cacheRead + r.cacheCreation,
+    formula: 'input + output + 缓存读 + 缓存写',
+    desc: 'cc-switch 界面上的“真实消耗 Tokens”，四项全部相加。缓存读每一轮都会把整段上下文再算一遍，所以会话越长、命中越高，数字越大。',
+    use: '和 cc-switch 界面对数。',
+    caveat: '缓存未上报的渠道（如 kiro）缺了缓存这部分，会显得偏小。',
+  },
+  fresh: {
+    label: 'fresh', zh: '去缓存', fn: r => r.input + r.output,
+    formula: 'input + output',
+    desc: '去掉缓存读写，只算没走缓存的输入和模型的输出。',
+    use: '看缓存正常的渠道真正新增了多少 token。',
+    caveat: '缓存未上报时，整段上下文都记在 input 里，fresh 会明显偏大，不适合拿来跨渠道比较。',
+  },
+  context: {
+    label: 'context', zh: '上下文', fn: r => r.input + r.cacheRead,
+    formula: 'input + 缓存读',
+    desc: '每次请求送进模型的完整上下文之和，不管有没有命中缓存。',
+    use: '衡量“背着多少上下文在跑”。缓存上报与否不影响它，是跨渠道最可比的 token 口径。',
+    caveat: '不含输出和缓存写入。',
+  },
+  output: {
+    label: 'output', zh: '产出', fn: r => r.output,
+    formula: 'output',
+    desc: '模型生成的 token，最接近“实际干了多少活”。',
+    use: '比较不同时间段的工作量。',
+    caveat: '思考型模型的推理 token 是否计入，取决于渠道上报。',
+  },
+  cost: {
+    label: 'cost', zh: '花费', fn: r => r.cost, usd: true,
+    formula: '各项 token × 本地 model-pricing.json 单价',
+    desc: 'cc-switch 用本地定价表折算的估算金额。',
+    use: '看钱花在哪些天、模型和会话上。',
+    caveat: '不等于上游账单。缓存未上报时整段上下文按全价 input 计，会明显偏高。',
+  },
+};
+const HIT_DEF = {
+  formula: '缓存读 ÷ (input + 缓存读 + 缓存写)',
+  desc: '可缓存的输入里，有多少命中了缓存。“排除未上报”只统计缓存有上报的记录，反映缓存实际工作得怎么样；“全量”把未上报的也算进分母，会被拉低。',
+  caveat: '未上报按“天 × 模型 × 会话”识别：该组合下有 input 但缓存读写都为 0。',
+};
+const PRESETS = [7, 14, 30];
+const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+const $ = id => document.getElementById(id);
+
+const ROWS = DATA ? DATA.rows.map(([date, a, m, s, requests, input, output, cacheRead, cacheCreation, cost]) => ({
+  date, app: DATA.apps[a], model: DATA.models[m], session: DATA.sessions[s], title: DATA.titles[s],
+  requests, input, output, cacheRead, cacheCreation, cost,
+})) : [];
+
+const state = { start: null, end: null, metric: 'real', sort: {} };
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function fmtTok(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 1 : 2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + 'k';
+  return String(Math.round(n));
+}
+function fmtUsd(n) {
+  if (n >= 1000) return '$' + Math.round(n).toLocaleString('en-US');
+  if (n >= 100) return '$' + n.toFixed(0);
+  if (n >= 1) return '$' + n.toFixed(2);
+  return n > 0 ? '$' + n.toFixed(3) : '$0';
+}
+const fmtVal = (r, m) => METRICS[m].usd ? fmtUsd(METRICS[m].fn(r)) : fmtTok(METRICS[m].fn(r));
+const fmtAxis = (v, usd) => usd ? fmtUsd(v) : fmtTok(v);
+
+function shift(ymd, days) {
+  const d = new Date(ymd + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function daysBetween(a, b) {
+  return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 864e5) + 1;
+}
+function weekday(ymd) { return WEEK[new Date(ymd + 'T00:00:00Z').getUTCDay()]; }
+function clampDate(ymd) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd || '')) return null;
+  return ymd < DATA.start ? DATA.start : ymd > DATA.end ? DATA.end : ymd;
+}
+
+function zero(key) {
+  return {
+    key, requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cost: 0,
+    uncachedCost: 0, unrepRequests: 0, repInput: 0, repRead: 0, repWrite: 0,
+  };
+}
+// A raw row (day x app x model x session) with input but no cache read/write at all
+// is treated as "cache not reported" (e.g. kiro), not as a genuine 0% hit.
+const isUnreported = r => r.input > 0 && r.cacheRead === 0 && r.cacheCreation === 0;
+function add(acc, r) {
+  acc.requests += r.requests; acc.input += r.input; acc.output += r.output;
+  acc.cacheRead += r.cacheRead; acc.cacheCreation += r.cacheCreation; acc.cost += r.cost;
+  if (isUnreported(r)) {
+    acc.uncachedCost += r.cost; acc.unrepRequests += r.requests;
+  } else {
+    acc.repInput += r.input; acc.repRead += r.cacheRead; acc.repWrite += r.cacheCreation;
+  }
+  return acc;
+}
+function group(rows, keyOf, extra) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = keyOf(r);
+    if (!map.has(key)) map.set(key, Object.assign(zero(key), extra ? extra(r) : null));
+    add(map.get(key), r);
+  }
+  return [...map.values()];
+}
+function inRange() { return ROWS.filter(r => r.date >= state.start && r.date <= state.end); }
+function dayBuckets(rows) {
+  const byDay = new Map(group(rows, r => r.date).map(d => [d.key, d]));
+  const n = daysBetween(state.start, state.end);
+  return Array.from({ length: n }, (_, i) => byDay.get(shift(state.start, i)) ?? zero(shift(state.start, i)));
+}
+/** Cache hit rate in %, or null when there is no cacheable input. */
+function hitRate(r, excludeUnreported) {
+  const [read, base] = excludeUnreported
+    ? [r.repRead, r.repInput + r.repRead + r.repWrite]
+    : [r.cacheRead, r.input + r.cacheRead + r.cacheCreation];
+  return base ? (read / base) * 100 : null;
+}
+const fmtPct = p => p == null ? '—' : (p >= 99.5 || p < 10 ? p.toFixed(1) : Math.round(p)) + '%';
+const isAllUnreported = r => r.input > 0 && r.repInput + r.repRead + r.repWrite === 0;
+
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  state.end = clampDate(p.get('to')) ?? DATA.end;
+  state.start = clampDate(p.get('from')) ?? DATA.start;
+  if (state.start > state.end) state.start = state.end;
+  if (METRICS[p.get('m')]) state.metric = p.get('m');
+}
+function writeHash() {
+  history.replaceState(null, '', `#from=${state.start}&to=${state.end}&m=${state.metric}`);
+}
+function renderHead(total, n) {
+  const gen = new Date(DATA.generated);
+  $('meta').innerHTML = `${esc(state.start)} — ${esc(state.end)} · ${n} 天<br>` +
+    `快照生成于 ${gen.toLocaleDateString('sv-SE')} ${gen.toTimeString().slice(0, 5)}<br>` +
+    `可选范围 ${esc(DATA.start)} — ${esc(DATA.end)}`;
+  const real = METRICS.real.fn(total), fresh = METRICS.fresh.fn(total);
+  if (!total.requests) { $('lede').textContent = '这段时间没有用量记录。'; return; }
+  const ratio = fresh ? Math.round(real / fresh) : 0;
+  const unrepReq = Math.round((total.unrepRequests / total.requests) * 100);
+  const unrepCost = total.cost ? Math.round((total.uncachedCost / total.cost) * 100) : 0;
+  const hitRep = hitRate(total, true), hitAll = hitRate(total, false);
+
+  const lines = [
+    `${n} 天共 <b>${total.requests.toLocaleString()}</b> 次请求，按 cc-switch 口径计 <b>${fmtTok(real)}</b> token。`,
+    `去掉缓存，真正新增的只有 <b>${fmtTok(fresh)}</b>${ratio > 1 ? `，相差 <b>${ratio} 倍</b>` : ''}。`,
+  ];
+  if (total.unrepRequests) {
+    lines.push(`其中 <b class="red">${unrepReq}%</b> 的请求缓存未上报；排除它们，缓存命中率是 ` +
+      `<b>${fmtPct(hitRep)}</b>，全量算则是 <b>${fmtPct(hitAll)}</b>。`);
+  } else {
+    lines.push(`缓存命中率 <b>${fmtPct(hitAll)}</b>，所有请求都有缓存上报。`);
+  }
+  lines.push(`估算花费 <b>${fmtUsd(total.cost)}</b>` +
+    (unrepCost >= 5 ? `，<b class="red">${unrepCost}%</b> 花在缓存未上报的请求上。` : '。'));
+  $('lede').innerHTML = lines.map(l => `<span>${l}</span>`).join('');
+}
+
+function renderStats(total) {
+  const unrep = total.requests ? Math.round((total.unrepRequests / total.requests) * 100) : 0;
+  const items = [
+    ['请求', total.requests.toLocaleString(), unrep ? `${unrep}% 缓存未上报` : '全部有缓存上报'],
+    ['real', fmtTok(METRICS.real.fn(total)), 'cc-switch 口径'],
+    ['fresh', fmtTok(METRICS.fresh.fn(total)), '去掉缓存后的 token'],
+    ['缓存命中', fmtPct(hitRate(total, true)), `排除未上报 · 全量 ${fmtPct(hitRate(total, false))}`],
+    ['花费', fmtUsd(total.cost), '本地定价估算', true],
+  ];
+  $('stats').innerHTML = items.map(([k, v, s, hot]) =>
+    `<div class="stat${hot ? ' hot' : ''}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+}
+
+function renderBar() {
+  const n = daysBetween(state.start, state.end);
+  const isPreset = d => state.end === DATA.end && n === d && daysBetween(DATA.start, DATA.end) >= d;
+  const presets = PRESETS.filter(d => d <= daysBetween(DATA.start, DATA.end) || d === PRESETS[0]);
+  $('bar').innerHTML = `
+    <div class="grp" role="group" aria-label="时间范围"><span class="lab">范围</span>
+      ${presets.map(d => `<button data-d="${d}" class="${isPreset(d) ? 'on' : ''}" aria-pressed="${isPreset(d)}">近 ${d} 天</button>`).join('')}
+    </div>
+    <div class="dates">
+      <input type="date" id="d-from" aria-label="开始日期" min="${DATA.start}" max="${DATA.end}" value="${state.start}">
+      <span>至</span>
+      <input type="date" id="d-to" aria-label="结束日期" min="${DATA.start}" max="${DATA.end}" value="${state.end}">
+    </div>
+    <div class="grp metric" role="group" aria-label="统计口径"><span class="lab">口径</span>
+      ${Object.entries(METRICS).map(([k, m]) =>
+        `<button data-m="${k}" class="${k === state.metric ? 'on' : ''}" aria-pressed="${k === state.metric}" title="${esc(m.zh + '：' + m.formula)}">${m.label}</button>`).join('')}
+    </div>`;
+  $('bar').querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+    state.end = DATA.end;
+    state.start = clampDate(shift(DATA.end, -(Number(b.dataset.d) - 1)));
+    update();
+  });
+  $('bar').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { state.metric = b.dataset.m; update(); });
+  const onDate = () => {
+    let a = clampDate($('d-from').value) ?? state.start;
+    let b = clampDate($('d-to').value) ?? state.end;
+    if (a > b) [a, b] = [b, a];
+    state.start = a; state.end = b;
+    update();
+  };
+  $('d-from').onchange = onDate;
+  $('d-to').onchange = onDate;
+}
+// Each metric is drawn as stacked segments, so the cache share is visible, not just stated.
+const SEGMENTS = {
+  real:    [['fresh', r => r.input + r.output, 'var(--blue)'], ['缓存读写', r => r.cacheRead + r.cacheCreation, 'var(--ghost)']],
+  context: [['input', r => r.input, 'var(--blue)'], ['缓存读', r => r.cacheRead, 'var(--ghost)']],
+  fresh:   [['fresh', r => r.input + r.output, 'var(--blue)']],
+  output:  [['output', r => r.output, 'var(--blue)']],
+  cost:    [['有缓存上报', r => r.cost - r.uncachedCost, 'var(--blue)'], ['无缓存上报', r => r.uncachedCost, 'var(--red)']],
+};
+
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  return [1, 2, 2.5, 5, 10].map(k => k * p).find(x => x >= v);
+}
+
+function renderChart(days) {
+  const segs = SEGMENTS[state.metric];
+  const usd = Boolean(METRICS[state.metric].usd);
+  const W = 1000, H = 300, L = 54, R = 6, T = 12, B = 40;
+  const iw = W - L - R, ih = H - T - B;
+  const max = niceMax(Math.max(...days.map(METRICS[state.metric].fn), 0));
+  const step = iw / days.length;
+  const bw = Math.max(Math.min(step * 0.62, 34), 2);
+  const y = v => T + ih - (v / max) * ih;
+  const every = Math.ceil(days.length / 15);
+
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="每日 ${state.metric} 用量柱状图">`;
+  days.forEach((d, i) => {
+    const wd = new Date(d.key + 'T00:00:00Z').getUTCDay();
+    if (wd === 0 || wd === 6) s += `<rect x="${L + i * step}" y="${T}" width="${step}" height="${ih}" fill="var(--tint)"/>`;
+  });
+  for (let k = 0; k <= 4; k++) {
+    const v = (max * k) / 4, yy = y(v);
+    s += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${k ? 'var(--rule2)' : 'var(--ink)'}" stroke-width="${k ? 1 : 1.2}"/>`;
+    s += `<text x="${L - 10}" y="${yy + 4}" text-anchor="end" font-size="11" font-family="var(--mono)" fill="var(--ink3)">${fmtAxis(v, usd)}</text>`;
+  }
+  days.forEach((d, i) => {
+    const x = L + i * step + (step - bw) / 2;
+    let base = 0;
+    for (const [, fn, color] of segs) {
+      const v = Math.max(fn(d), 0);
+      if (v > 0) {
+        const h = Math.max((v / max) * ih, 0.8);
+        s += `<rect class="bar-r" style="animation-delay:${i * 12}ms" x="${x.toFixed(1)}" y="${(y(base) - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${color}"/>`;
+        base += v;
+      }
+    }
+    const isLast = i === days.length - 1;
+    if (i % every === 0 || (isLast && i % every >= Math.ceil(every / 2) + 1)) {
+      const cx = (L + i * step + step / 2).toFixed(1);
+      s += `<text x="${cx}" y="${H - 22}" text-anchor="middle" font-size="11" font-family="var(--mono)" fill="var(--ink2)">${d.key.slice(5)}</text>`;
+      s += `<text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--ink3)">${weekday(d.key)}</text>`;
+    }
+  });
+  days.forEach((d, i) => {
+    s += `<rect class="hit" data-i="${i}" x="${L + i * step}" y="${T}" width="${step}" height="${ih}"/>`;
+  });
+  s += '</svg><div class="tip" id="tip" role="tooltip"></div>';
+  $('chart').innerHTML = s;
+  $('legend').innerHTML = segs.map(([name, , color]) => `<span><i style="background:${color}"></i>${name}</span>`).join('') +
+    '<span><i style="background:var(--tint)"></i>周末</span>';
+  bindTip(days);
+}
+
+function bindTip(days) {
+  const tip = $('tip'), box = $('chart');
+  box.querySelectorAll('.hit').forEach(el => {
+    el.onmouseenter = () => {
+      const d = days[Number(el.dataset.i)];
+      const line = (k, v) => `<div><span>${k}</span><span>${v}</span></div>`;
+      tip.innerHTML = `<b>${d.key} 周${weekday(d.key)}</b>` +
+        (d.requests
+          ? line('请求', d.requests.toLocaleString()) + line('real', fmtTok(METRICS.real.fn(d))) +
+            line('fresh', fmtTok(METRICS.fresh.fn(d))) + line('output', fmtTok(d.output)) +
+            line('命中(排除未上报)', fmtPct(hitRate(d, true))) + line('命中(全量)', fmtPct(hitRate(d, false))) +
+            line('花费', fmtUsd(d.cost))
+          : '<div>无用量</div>');
+      tip.classList.add('show');
+    };
+    el.onmousemove = e => {
+      const r = box.getBoundingClientRect();
+      const x = e.clientX - r.left, yy = e.clientY - r.top;
+      const left = x + 16 + tip.offsetWidth > r.width ? x - tip.offsetWidth - 16 : x + 16;
+      tip.style.left = left + 'px';
+      tip.style.top = Math.max(yy - tip.offsetHeight - 10, 0) + 'px';
+    };
+    el.onmouseleave = () => tip.classList.remove('show');
+  });
+}
+const NUM_COLS = [
+  ['requests', 'reqs', r => r.requests, r => r.requests.toLocaleString()],
+  ...Object.keys(METRICS).map(m => [m, m, METRICS[m].fn, r => fmtVal(r, m)]),
+  ['hit', '命中', r => hitRate(r, true) ?? -1, r => fmtPct(hitRate(r, true))],
+];
+
+function tag(r) {
+  if (isAllUnreported(r)) return '<span class="tag no">缓存未上报</span>';
+  const share = r.requests ? (r.unrepRequests / r.requests) * 100 : 0;
+  if (share >= 1) return `<span class="tag no">${Math.round(share)}% 未上报</span>`;
+  return '';
+}
+
+function renderTable(id, rows, keyCell) {
+  const sortKey = state.sort[id]?.col ?? state.metric;
+  const desc = state.sort[id]?.desc ?? true;
+  const valOf = sortKey === 'key' ? r => r.label ?? r.key : NUM_COLS.find(c => c[0] === sortKey)[2];
+  const sorted = [...rows].sort((a, b) => {
+    const va = valOf(a), vb = valOf(b);
+    return (typeof va === 'string' ? va.localeCompare(vb, 'zh') : va - vb) * (desc ? -1 : 1);
+  });
+  const fn = METRICS[state.metric].fn;
+  const total = rows.reduce((s, r) => s + fn(r), 0) || 1;
+  const totalCost = rows.reduce((s, r) => s + r.cost, 0);
+  const arrow = k => k === sortKey ? (desc ? ' ↓' : ' ↑') : '';
+  const head = `<thead><tr><th data-c="key" class="${sortKey === 'key' ? 'on' : ''}">名称${arrow('key')}</th>` +
+    NUM_COLS.map(([k, label]) => `<th data-c="${k}" class="${k === state.metric ? 'on' : ''}">${label}${arrow(k)}</th>`).join('') +
+    `<th>占比</th></tr></thead>`;
+  const body = sorted.map(r => {
+    const share = fn(r) / total;
+    const cells = NUM_COLS.map(([k, , , fmt]) => {
+      const cls = [k === state.metric ? 'on' : '', k === 'cost' && r.cost >= 50 && r.cost >= totalCost * 0.15 ? 'hot' : '']
+        .filter(Boolean).join(' ');
+      return `<td${cls ? ` class="${cls}"` : ''}>${fmt(r)}</td>`;
+    }).join('');
+    return `<tr><td class="k">${keyCell(r)}</td>${cells}` +
+      `<td><div class="share"><span style="width:${Math.max(share * 64, 1).toFixed(1)}px"></span>${(share * 100).toFixed(share < 0.1 ? 1 : 0)}%</div></td></tr>`;
+  }).join('');
+  const el = $(id);
+  el.innerHTML = rows.length ? head + `<tbody>${body}</tbody>` : '<tbody><tr><td class="empty">没有数据</td></tr></tbody>';
+  el.querySelectorAll('th[data-c]').forEach(th => th.onclick = () => {
+    const col = th.dataset.c;
+    state.sort[id] = { col, desc: col === sortKey ? !desc : true };
+    renderTable(id, rows, keyCell);
+  });
+}
+
+function currentDef(m) {
+  return `<div class="def"><span class="def-name">${m.label} · ${m.zh}</span>` +
+    `<code>${esc(m.formula)}</code><p>${esc(m.desc)}</p></div>`;
+}
+
+function glossary() {
+  const item = (name, zh, d, active) => `<div class="gl${active ? ' on' : ''}">
+      <dt><b>${name}</b><span>${zh}</span></dt>
+      <dd><code>${esc(d.formula)}</code><p>${esc(d.desc)}</p>
+        ${d.use ? `<p><em>适合</em>${esc(d.use)}</p>` : ''}
+        <p><em>注意</em>${esc(d.caveat)}</p></dd></div>`;
+  return '<dl class="glossary">' +
+    Object.entries(METRICS).map(([k, d]) => item(d.label, d.zh, d, k === state.metric)).join('') +
+    item('命中', '缓存命中率', HIT_DEF, false) + '</dl>';
+}
+
+function section(no, title, note, body) {
+  return `<section><div class="sh"><span class="no">${no}</span><h2>${title}</h2><small>${note}</small></div>${body}</section>`;
+}
+
+function update() {
+  writeHash();
+  const rows = inRange();
+  const days = dayBuckets(rows);
+  const total = rows.reduce(add, zero('total'));
+  const n = days.length;
+  renderHead(total, n);
+  renderStats(total);
+  renderBar();
+
+  const sessions = group(rows.filter(r => r.session), r => r.session, r => ({ title: r.title, app: r.app }))
+    .sort((a, b) => METRICS[state.metric].fn(b) - METRICS[state.metric].fn(a)).slice(0, 20)
+    .map(r => ({ ...r, label: r.title || r.key }));
+  const m = METRICS[state.metric];
+  $('main').innerHTML =
+    section('01', '每日走势', '悬停查看当天明细', currentDef(m) +
+      '<div class="chart" id="chart"></div><div class="legend" id="legend"></div>') +
+    section('02', '按模型', '点击列头排序 · 命中率已排除缓存未上报', '<table id="t-models"></table>') +
+    section('03', '按会话', `按 ${m.label} 取前 20`, '<table id="t-sessions"></table>') +
+    section('04', '按应用', '', '<table id="t-apps"></table>') +
+    section('05', '口径说明', '每个数字是怎么算的', glossary());
+
+  renderChart(days);
+  renderTable('t-models', group(rows, r => r.model), r => esc(r.key) + tag(r));
+  renderTable('t-sessions', sessions, r =>
+    (r.title ? esc(r.title) : `<span class="id">${esc(r.key)}</span>`) + tag(r) +
+    (r.title ? `<span class="t"><span class="id">${esc(r.key)}</span> · ${esc(r.app)}</span>` : ''));
+  renderTable('t-apps', group(rows, r => r.app), r => esc(r.key) + tag(r));
+}
+
+if (!DATA || !ROWS.length) {
+  document.querySelector('.page').insertAdjacentHTML('beforeend',
+    '<div class="empty">本页没有内嵌数据。请运行 <code>ulens html</code> 生成报告。</div>');
+} else {
+  readHash();
+  update();
+  window.addEventListener('hashchange', () => { readHash(); update(); });
+}
+</script>
+</body>
+</html>

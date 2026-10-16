@@ -1,0 +1,15 @@
+{
+  "name": "usage-lens",
+  "version": "0.1.0",
+  "description": "Multi-metric usage lens for cc-switch's SQLite database (real / fresh / context / output / cost)",
+  "type": "module",
+  "bin": {
+    "ulens": "./bin/cli.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node bin/cli.js"
+  }
+}

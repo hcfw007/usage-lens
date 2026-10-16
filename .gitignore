@@ -1,0 +1,7 @@
+cc-usage-report.html
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+.DS_Store
+node_modules/
