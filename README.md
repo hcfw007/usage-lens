@@ -1,5 +1,7 @@
 # usage-lens
 
+**中文** | [English](README.en.md)
+
 一个读取 cc-switch 本地数据库的零依赖用量分析工具。
 
 ## 为什么做这个工具
@@ -50,11 +52,11 @@ ulens serve --db /path/to/cc-switch.db
 项目中的 HTML 是不含用量数据的模板，数据仅由同源的本机后端读取并返回给本机浏览器。
 服务只监听回环地址 `127.0.0.1`；不会将数据库或用量数据上传到 GitHub 或其他服务器。
 每次手动刷新或每 5 分钟自动刷新时，后端都会重新读取 cc-switch 数据库。
-页面默认范围是最近 30 天，含“当天 / 近 7 天 / 近 14 天 / 近 30 天”快捷选项；“按模型”和“按会话”排行默认折叠。
+页面默认范围是最近 30 天，含“当天 / 近 7 天 / 近 14 天 / 近 30 天”快捷选项；“按模型”“按会话”“按应用”排行默认折叠。
 
 ### cc-switch 数据库位置
 
-默认自动查找 `~/.cc-switch/cc-switch.db`，并探测常见配置目录。数据库路径优先级为：`--db` > `CC_SWITCH_DB` > `CC_SWITCH_HOME` > 自动探测。可这样指定：
+默认自动查找 `~/.cc-switch/cc-switch.db`，并探测常见配置目录。Windows 会检查 `%USERPROFILE%\.cc-switch\cc-switch.db`；macOS 和 Linux 使用各自的 home 目录。cc-switch 自定义了数据目录时，请用环境变量显式指定。数据库路径优先级为：`--db` > `CC_SWITCH_DB` > `CC_SWITCH_HOME` > 自动探测。可这样指定：
 
 ```bash
 ulens serve --db /完整路径/cc-switch.db   # 单次指定，优先级最高
@@ -62,7 +64,7 @@ export CC_SWITCH_DB=/完整路径/cc-switch.db
 export CC_SWITCH_HOME=/完整路径/.cc-switch # 目录，程序会追加 cc-switch.db
 ```
 
-环境变量对 CLI 和本地后端都生效；启动后端时会打印实际使用的数据库路径。
+环境变量对 CLI 和本地后端都生效；启动后端时会打印实际使用的数据库路径。“按模型”“按会话”“按应用”排行均可折叠，默认折叠。
 
 ## 用法
 
@@ -111,76 +113,3 @@ ulens session --from 2026-10-13 --metric cost --limit 10
 
 session 维度额外只读访问 `~/.local/share/opencode/opencode.db` 关联标题，
 失败时静默降级。数据库被 cc-switch 写锁占用时自动快照到临时目录再读。
-
----
-
-## English
-
-Usage Lens is a zero-dependency CLI and local web UI for analyzing usage recorded in cc-switch's SQLite database.
-
-### Why
-
-Some model providers and relays do not report cache read/write usage. The same long-context request can therefore appear as cached input on one route and ordinary input on another. Comparing a single total can confuse reporting differences with actual workload changes.
-
-Usage Lens shows several token metrics side by side, calculates cache hit rate excluding records with unreported cache usage, and flags those records. It does not invent missing cache data or replace the provider's bill.
-
-### Requirements and install
-
-- Node.js >= 22.5 (`node:sqlite` is used; no third-party runtime dependencies)
-
-```bash
-npm link             # optional: install the `ulens` command globally
-# or run directly: node bin/cli.js
-```
-
-### HTML snapshot
-
-```bash
-ulens html                       # last 30 days -> ./cc-usage-report.html
-ulens html --out ~/usage.html
-```
-
-This creates a self-contained HTML snapshot with its data embedded. Open it directly in a browser. It supports Today / Last 7 / 14 / 30 days, custom dates within the snapshot, and metric switching.
-
-### Live local dashboard
-
-```bash
-ulens serve                      # http://127.0.0.1:4782
-ulens serve --db /path/to/cc-switch.db
-```
-
-The HTML template is stored in this repository; usage data is fetched from the same-origin local backend and is never uploaded. The server binds only to `127.0.0.1`. The page refreshes every five minutes and also has a manual refresh button. The default range is 30 days; model and session rankings are collapsible and start collapsed.
-
-### Selecting the cc-switch database
-
-Database selection precedence is: `--db` > `CC_SWITCH_DB` > `CC_SWITCH_HOME` > automatic detection. `CC_SWITCH_DB` is the full database file path; `CC_SWITCH_HOME` is the directory containing `cc-switch.db`.
-
-```bash
-ulens serve --db /absolute/path/cc-switch.db
-export CC_SWITCH_DB=/absolute/path/cc-switch.db
-export CC_SWITCH_HOME=/absolute/path/.cc-switch
-```
-
-The environment variables apply to both CLI queries and the local backend. On startup, the backend prints the resolved database path. Automatic detection checks `~/.cc-switch/cc-switch.db` and common config locations.
-
-### CLI examples
-
-```bash
-ulens day --from 2026-10-08
-ulens model --from 2026-10-13 --metric fresh
-ulens session --from 2026-10-13 --metric cost --limit 10
-```
-
-Dimensions: `day`, `model`, `app`, `session`, `day+model`, and `day+app`.
-
-| Metric | Formula | Meaning |
-|---|---|---|
-| `real` | input + output + cache read + cache write | cc-switch UI total |
-| `fresh` | input + output | Input and output excluding cache fields |
-| `context` | input + cache read | Context sent to the model, cache-independent |
-| `output` | output | Generated tokens |
-| `cost` | Local model pricing estimate | Not the upstream bill |
-
-### Data sources
-
-Usage Lens opens `~/.cc-switch/cc-switch.db` read-only and combines `proxy_request_logs` (request-level detail) with `usage_daily_rollups` (historical daily aggregates). Session titles are optionally read from OpenCode's local database. If cc-switch holds a write lock, the reader falls back to a temporary copy.
