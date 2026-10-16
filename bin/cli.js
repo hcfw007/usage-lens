@@ -25,7 +25,8 @@ Options:
   --app NAME           filter by app
   --metric NAME        sort metric: real|fresh|context|output|cost (default real)
   --limit N            show top N rows
-  --db PATH            cc-switch db override (default ~/.cc-switch/cc-switch.db)
+  --db PATH            cc-switch db file (highest priority; default ~/.cc-switch/cc-switch.db)
+  env: CC_SWITCH_DB=PATH (file) or CC_SWITCH_HOME=DIR (directory containing cc-switch.db)
   --port N             local server port (default 4782)
   --out PATH           output file for html
   -h, --help           this help
