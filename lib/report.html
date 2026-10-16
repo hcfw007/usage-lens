@@ -93,6 +93,18 @@
   .sh .no { font: 600 12px var(--mono); color: var(--red); }
   .sh h2 { font: 600 24px/1.2 var(--serif); margin: 0; letter-spacing: -.01em; }
   .sh small { margin-left: auto; font-size: 12.5px; color: var(--ink3); }
+  .fold { padding: 0; }
+  .fold details > summary {
+    list-style: none; display: flex; align-items: center; gap: 10px; padding: 18px 20px;
+    cursor: pointer; user-select: none;
+  }
+  .fold details > summary::-webkit-details-marker { display: none; }
+  .fold details > summary:hover { background: var(--tint); }
+  .fold .sh { flex: 1; }
+  .fold .sh small { margin-left: 0; }
+  .fold .chevron { width: 8px; height: 8px; border-right: 1.5px solid var(--ink3); border-bottom: 1.5px solid var(--ink3); transform: rotate(45deg); transition: transform .15s; margin: -4px 3px 0 8px; }
+  .fold details[open] .chevron { transform: rotate(225deg); margin-top: 4px; }
+  .fold-body { padding: 0 20px 18px; overflow-x: auto; }
 
   /* chart */
   .chart { position: relative; margin-top: 14px; }
@@ -193,8 +205,8 @@
     background: var(--paper2); border: 1px solid var(--rule2); border-left: 3px solid var(--blue);
     border-radius: 5px; color: var(--ink2); font: 14px/1.75 var(--sans);
   }
-  .lede span { display: inline; }
-  .lede span + span::before { content: "  /  "; color: var(--ink3); padding: 0 6px; font: 12px var(--mono); }
+  .lede span { display: block; }
+  .lede span + span { margin-top: 3px; }
   .lede b { color: var(--ink); font: 650 14px var(--mono); }
   .stats {
     gap: 10px; border: 0; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 18px;
@@ -255,6 +267,9 @@
     .bar .metric { margin-left: 0; }
     .head-right { align-items: flex-end; flex-direction: column-reverse; gap: 4px; }
     section { padding: 14px 12px; overflow-x: auto; }
+    .fold { padding: 0; }
+    .fold details > summary { padding: 14px 12px; }
+    .fold-body { padding: 0 12px 14px; }
     .sh small { max-width: 42%; text-align: right; }
     .def { margin-left: 0; }
   }
@@ -328,7 +343,8 @@ const HIT_DEF = {
   desc: '可缓存的输入里，有多少命中了缓存。“排除未上报”只统计缓存有上报的记录，反映缓存实际工作得怎么样；“全量”把未上报的也算进分母，会被拉低。',
   caveat: '未上报按“天 × 模型 × 会话”识别：该组合下有 input 但缓存读写都为 0。',
 };
-const PRESETS = [7, 14, 30];
+const PRESETS = [1, 7, 14, 30];
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 const $ = id => document.getElementById(id);
 
@@ -471,10 +487,10 @@ function renderStats(total) {
 function renderBar() {
   const n = daysBetween(state.start, state.end);
   const isPreset = d => state.end === DATA.end && n === d && daysBetween(DATA.start, DATA.end) >= d;
-  const presets = PRESETS.filter(d => d <= daysBetween(DATA.start, DATA.end) || d === PRESETS[0]);
+  const presets = PRESETS.filter(d => d <= daysBetween(DATA.start, DATA.end));
   $('bar').innerHTML = `
     <div class="grp" role="group" aria-label="时间范围"><span class="lab">范围</span>
-      ${presets.map(d => `<button data-d="${d}" class="${isPreset(d) ? 'on' : ''}" aria-pressed="${isPreset(d)}">近 ${d} 天</button>`).join('')}
+      ${presets.map(d => `<button data-d="${d}" class="${isPreset(d) ? 'on' : ''}" aria-pressed="${isPreset(d)}">${d === 1 ? '当天' : `近 ${d} 天`}</button>`).join('')}
     </div>
     <div class="dates">
       <input type="date" id="d-from" aria-label="开始日期" min="${DATA.start}" max="${DATA.end}" value="${state.start}">
@@ -657,6 +673,13 @@ function section(no, title, note, body) {
   return `<section><div class="sh"><span class="no">${no}</span><h2>${title}</h2><small>${note}</small></div>${body}</section>`;
 }
 
+function foldSection(no, title, note, body) {
+  return `<section class="fold"><details><summary><div class="sh">` +
+    `<span class="no">${no}</span><h2>${title}</h2><small>${note}</small></div>` +
+    '<span class="chevron" aria-hidden="true"></span></summary>' +
+    `<div class="fold-body">${body}</div></details></section>`;
+}
+
 function update() {
   writeHash();
   const rows = inRange();
@@ -674,8 +697,8 @@ function update() {
   $('main').innerHTML =
     section('01', '每日走势', '悬停查看当天明细', currentDef(m) +
       '<div class="chart" id="chart"></div><div class="legend" id="legend"></div>') +
-    section('02', '按模型', '点击列头排序 · 命中率已排除缓存未上报', '<table id="t-models"></table>') +
-    section('03', '按会话', `按 ${m.label} 取前 20`, '<table id="t-sessions"></table>') +
+    foldSection('02', '按模型', '点击展开 · 命中率已排除缓存未上报', '<table id="t-models"></table>') +
+    foldSection('03', '按会话', `点击展开 · 按 ${m.label} 取前 20`, '<table id="t-sessions"></table>') +
     section('04', '按应用', '', '<table id="t-apps"></table>') +
     section('05', '口径说明', '每个数字是怎么算的', glossary());
 
@@ -728,7 +751,7 @@ async function refreshLive() {
     }
     update();
     const time = new Date(DATA.generated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setLiveState(`LIVE · ${time}`, '');
+    setLiveState(`LIVE · 5m · ${time}`, '', '每 5 分钟自动刷新');
     button.title = '手动刷新';
   } catch (error) {
     setLiveState('连接本机后端失败', 'stale', error.message);
@@ -746,7 +769,7 @@ if (LIVE_MODE) {
   $('refresh-btn').hidden = false;
   $('refresh-btn').onclick = refreshLive;
   refreshLive();
-  window.setInterval(refreshLive, 60_000);
+  window.setInterval(refreshLive, REFRESH_INTERVAL_MS);
 } else if (DATA) {
   setLiveState('数据快照', 'static');
   readHash();
