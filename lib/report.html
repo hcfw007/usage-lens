@@ -343,7 +343,7 @@ const HIT_DEF = {
   desc: '可缓存的输入里，有多少命中了缓存。“排除未上报”只统计缓存有上报的记录，反映缓存实际工作得怎么样；“全量”把未上报的也算进分母，会被拉低。',
   caveat: '未上报按“天 × 模型 × 会话”识别：该组合下有 input 但缓存读写都为 0。',
 };
-const PRESETS = [1, 7, 14, 30];
+const PRESETS = [1, 7, 14, 30, 60, 'all'];
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 const $ = id => document.getElementById(id);
@@ -453,8 +453,8 @@ const isAllUnreported = r => r.input > 0 && r.repInput + r.repRead + r.repWrite 
 
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
-  state.end = clampDate(p.get('to')) ?? DATA.end;
-  state.start = clampDate(p.get('from')) ?? DATA.start;
+  state.end = clampDate(p.get('to')) ?? state.end ?? DATA.end;
+  state.start = clampDate(p.get('from')) ?? state.start ?? DATA.start;
   if (state.start > state.end) state.start = state.end;
   if (METRICS[p.get('m')]) state.metric = p.get('m');
 }
@@ -503,11 +503,15 @@ function renderStats(total) {
 
 function renderBar() {
   const n = daysBetween(state.start, state.end);
-  const isPreset = d => state.end === DATA.end && n === d && daysBetween(DATA.start, DATA.end) >= d;
-  const presets = PRESETS.filter(d => d <= daysBetween(DATA.start, DATA.end));
+  const available = daysBetween(DATA.start, DATA.end);
+  const isPreset = d => d === 'all'
+    ? state.start === DATA.start && state.end === DATA.end
+    : state.end === DATA.end && n === d && available >= d;
+  const presets = PRESETS.filter(d => d === 'all' || d <= available);
+  const label = d => d === 1 ? '当天' : d === 'all' ? '全部' : `近 ${d} 天`;
   $('bar').innerHTML = `
     <div class="grp" role="group" aria-label="时间范围"><span class="lab">范围</span>
-      ${presets.map(d => `<button data-d="${d}" class="${isPreset(d) ? 'on' : ''}" aria-pressed="${isPreset(d)}">${d === 1 ? '当天' : `近 ${d} 天`}</button>`).join('')}
+      ${presets.map(d => `<button data-d="${d}" class="${isPreset(d) ? 'on' : ''}" aria-pressed="${isPreset(d)}">${label(d)}</button>`).join('')}
     </div>
     <div class="dates">
       <input type="date" id="d-from" aria-label="开始日期" min="${DATA.start}" max="${DATA.end}" value="${state.start}">
@@ -520,7 +524,9 @@ function renderBar() {
     </div>`;
   $('bar').querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
     state.end = DATA.end;
-    state.start = clampDate(shift(DATA.end, -(Number(b.dataset.d) - 1)));
+    state.start = b.dataset.d === 'all'
+      ? DATA.start
+      : clampDate(shift(DATA.end, -(Number(b.dataset.d) - 1))) ?? DATA.start;
     update();
   });
   $('bar').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { state.metric = b.dataset.m; update(); });
@@ -754,18 +760,23 @@ async function refreshLive() {
       DATA = fresh;
       ROWS = decodeRows(DATA);
       INTRADAY = decodeIntraday(DATA);
-      state.start = DATA.start;
       state.end = DATA.end;
+      state.start = clampDate(shift(DATA.end, -(30 - 1))) ?? DATA.start;
       readHash();
     } else {
       const followedLatest = state.end === DATA.end;
+      const anchoredToEarliest = state.start === DATA.start;
       const span = daysBetween(state.start, state.end);
       DATA = fresh;
       ROWS = decodeRows(DATA);
       INTRADAY = decodeIntraday(DATA);
       if (followedLatest) {
         state.end = DATA.end;
-        state.start = shift(state.end, -(Math.min(span, 30) - 1));
+        // Keep the current view width (however wide, including "all");
+        // an "all" view re-anchors to the new earliest readable date.
+        state.start = anchoredToEarliest
+          ? DATA.start
+          : clampDate(shift(state.end, -(span - 1))) ?? DATA.start;
       } else {
         state.start = clampDate(state.start);
         state.end = clampDate(state.end);

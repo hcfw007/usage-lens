@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { openReadOnly, dispose, loadRows, loadIntradayRows, resolveCCSwitchDb, OPENCODE_DB } from '../lib/db.js';
+import { openReadOnly, dispose, loadRows, loadIntradayRows, loadEarliestDate, resolveCCSwitchDb, OPENCODE_DB } from '../lib/db.js';
 import { aggregate, withSessionTitles, METRICS } from '../lib/aggregate.js';
 import { renderTable } from '../lib/render.js';
 
@@ -7,8 +7,8 @@ const USAGE = `ulens — multi-metric usage lens over cc-switch's database
 
 Usage:
   ulens [dim] [options]
-  ulens html [options]      self-contained HTML report (last 30 days, range picker inside)
-                            --to sets the end day; --out sets the file path
+  ulens html [options]      self-contained HTML report (default last 30 days; range picker inside)
+                            --to sets the end day; --from/--all widen the range; --out sets the file path
   ulens serve [options]     run a localhost backend; UI polls it every 5 minutes
 
 Dimensions:
@@ -22,6 +22,7 @@ Dimensions:
 Options:
   --from YYYY-MM-DD    start date (inclusive)
   --to YYYY-MM-DD      end date (inclusive)
+  --all                html mode: include every day readable in the database
   --app NAME           filter by app
   --metric NAME        sort metric: real|fresh|context|output|cost (default real)
   --limit N            show top N rows
@@ -45,6 +46,7 @@ function parseArgs(argv) {
     if (a === '-h' || a === '--help') { console.log(USAGE); process.exit(0); }
     else if (a === '--from') opts.from = argv[++i];
     else if (a === '--to') opts.to = argv[++i];
+    else if (a === '--all') opts.all = true;
     else if (a === '--app') opts.app = argv[++i];
     else if (a === '--metric') opts.metric = argv[++i];
     else if (a === '--limit') opts.limit = Number(argv[++i]);
@@ -78,10 +80,18 @@ async function readIntraday(date, filters) {
 }
 
 async function writeHtmlReport(opts) {
-  const { buildReport, reportWindow, REPORT_WINDOW_DAYS } = await import('../lib/report.js');
-  const { start, end, clamped } = reportWindow(opts);
-  if (clamped) console.error(`note: html report keeps at most ${REPORT_WINDOW_DAYS} days, using ${start} ~ ${end}`);
-
+  const { buildReport, reportWindow } = await import('../lib/report.js');
+  if (opts.all) {
+    const dbPath = await resolveCCSwitchDb(opts.db);
+    const db = await openReadOnly(dbPath);
+    try {
+      opts.from = loadEarliestDate(db);
+    } finally {
+      await dispose(db);
+    }
+    if (!opts.from) { console.log('database has no usage data yet'); return; }
+  }
+  const { start, end } = reportWindow(opts);
   const rows = await readRows({ ...opts, from: start, to: end });
   if (!rows.length) { console.log(`no data between ${start} and ${end}`); return; }
   const intraday = await readIntraday(end, opts);
