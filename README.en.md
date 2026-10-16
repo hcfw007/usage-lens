@@ -24,9 +24,10 @@ npm link             # optional: install the `ulens` command globally
 ```bash
 ulens html                       # last 30 days -> ./cc-usage-report.html
 ulens html --out ~/usage.html
+ulens html --all                 # include every day readable in the database
 ```
 
-This creates a self-contained HTML snapshot with its data embedded. Open it directly in a browser. It supports Today / Last 7 / 14 / 30 days, custom dates within the snapshot, and metric switching.
+This creates a self-contained HTML snapshot with its data embedded. Open it directly in a browser. It supports Today / Last 7 / 14 / 30 / 60 days, All (from the earliest day readable in the database), custom dates, and metric switching.
 When Today is selected, the chart uses 30-minute buckets (48 slots); longer ranges remain grouped by day.
 
 ## Live local dashboard
@@ -36,7 +37,7 @@ ulens serve                      # http://127.0.0.1:4782
 ulens serve --db /path/to/cc-switch.db
 ```
 
-The HTML template is stored in this repository; usage data is fetched from the same-origin local backend and is never uploaded. The server binds only to `127.0.0.1`. The page refreshes every five minutes and has a manual refresh button. The default range is 30 days. Model, session, and app rankings are collapsible and start collapsed.
+The HTML template is stored in this repository; usage data is fetched from the same-origin local backend and is never uploaded. The server binds only to `127.0.0.1`. The page refreshes every five minutes and has a manual refresh button. The default range is 30 days, with quick presets for Today / Last 7 / 14 / 30 / 60 days and All (from the earliest day readable in the database). Model, session, and app rankings are collapsible and start collapsed.
 Today is charted in 30-minute intervals; longer ranges are grouped by day.
 
 ## Selecting the cc-switch database
