@@ -40,6 +40,35 @@ ulens html --out ~/usage.html
 生成单个自包含 HTML（数据内嵌，无外部请求），双击即可打开。页面内可切换近 7 / 14 / 30 天
 或自选起止日期（限定在快照的 30 天内）、切换统计口径；当前视图会写进 URL hash，可收藏。
 
+### 实时本地页面
+
+```bash
+ulens serve                 # http://127.0.0.1:4782，每分钟自动刷新，也可手动刷新
+ulens serve --db /path/to/cc-switch.db
+```
+
+服务只监听本机回环地址，不会把数据库或用量数据上传。每次页面刷新都重新读取 cc-switch 数据库。
+
+也可以将**不含用量数据**的页面外壳部署到 GitHub Pages：
+
+```bash
+ulens pages --out docs/index.html
+ulens serve --origin https://<user>.github.io
+```
+
+Pages 页面从浏览器连接本机 `127.0.0.1:4782` 获取数据。服务端只允许配置的精确网页来源跨域读取；
+访问者需要在自己的电脑上运行后端。数据仅从本机返回给本机浏览器，不写入 GitHub。
+
+### cc-switch 数据库位置
+
+默认自动查找 `~/.cc-switch/cc-switch.db`，并探测常见配置目录。可通过以下任一方式指定：
+
+```bash
+ulens serve --db /完整路径/cc-switch.db   # 单次指定，优先级最高
+export CC_SWITCH_DB=/完整路径/cc-switch.db
+export CC_SWITCH_HOME=/完整路径/.cc-switch # 目录，程序会追加 cc-switch.db
+```
+
 ## 用法
 
 ```bash

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { openReadOnly, dispose, loadRows, CC_SWITCH_DB, OPENCODE_DB } from '../lib/db.js';
+import { dirname, resolve } from 'node:path';
+import { openReadOnly, dispose, loadRows, resolveCCSwitchDb, OPENCODE_DB } from '../lib/db.js';
 import { aggregate, withSessionTitles, METRICS } from '../lib/aggregate.js';
 import { renderTable } from '../lib/render.js';
 
@@ -9,6 +10,8 @@ Usage:
   ulens [dim] [options]
   ulens html [options]      self-contained HTML report (last 30 days, range picker inside)
                             --to sets the end day; --out sets the file path
+  ulens serve [options]     run a localhost backend; UI polls it every minute
+  ulens pages [options]     write a data-free GitHub Pages UI shell
 
 Dimensions:
   day        per day (default)
@@ -25,6 +28,10 @@ Options:
   --metric NAME        sort metric: real|fresh|context|output|cost (default real)
   --limit N            show top N rows
   --db PATH            cc-switch db override (default ~/.cc-switch/cc-switch.db)
+  --port N             local server port (default 4782)
+  --origin URL         allowed hosted UI origin, e.g. https://user.github.io
+  --api-base URL       local API URL embedded by pages (default http://127.0.0.1:4782)
+  --out PATH           output file for html / pages
   -h, --help           this help
 
 Metrics shown per row (columns):
@@ -46,6 +53,9 @@ function parseArgs(argv) {
     else if (a === '--limit') opts.limit = Number(argv[++i]);
     else if (a === '--db') opts.db = argv[++i];
     else if (a === '--out') opts.out = argv[++i];
+    else if (a === '--port') opts.port = Number(argv[++i]);
+    else if (a === '--origin') opts.origin = argv[++i];
+    else if (a === '--api-base') opts.apiBase = argv[++i];
     else if (!a.startsWith('--')) opts.dim = a;
     else { console.error(`unknown option: ${a}`); process.exit(1); }
   }
@@ -53,7 +63,8 @@ function parseArgs(argv) {
 }
 
 async function readRows(filters) {
-  const db = await openReadOnly(filters.db ?? CC_SWITCH_DB);
+  const dbPath = await resolveCCSwitchDb(filters.db);
+  const db = await openReadOnly(dbPath);
   try {
     return loadRows(db, filters);
   } finally {
@@ -83,6 +94,8 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!METRICS[opts.metric]) { console.error(`unknown metric: ${opts.metric}`); process.exit(1); }
 
+  if (opts.dim === 'serve') return runServer(opts);
+  if (opts.dim === 'pages') return writePagesShell(opts);
   if (opts.dim === 'html') return writeHtmlReport(opts);
 
   const rows = await readRows(opts);
@@ -94,6 +107,31 @@ async function main() {
     opts.showTitle = opts.showTitle ?? true;
   }
   console.log(renderTable(agg, opts));
+}
+
+async function runServer(opts) {
+  const { startServer, DEFAULT_PORT } = await import('../lib/server.js');
+  const port = opts.port ?? DEFAULT_PORT;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('--port must be an integer from 1 to 65535');
+  const { server, dbPath, trustedOrigin } = await startServer({ port, origin: opts.origin, db: opts.db });
+  console.log(`Usage Lens: http://127.0.0.1:${server.address().port}/`);
+  console.log(`Database:   ${dbPath}`);
+  console.log(`Auto-refresh: every 60 seconds${trustedOrigin ? `; CORS origin: ${trustedOrigin}` : ''}`);
+  const stop = () => server.close(() => process.exit(0));
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+}
+
+async function writePagesShell(opts) {
+  const { buildLivePage, DEFAULT_API_BASE } = await import('../lib/report.js');
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const out = opts.out ?? 'docs/index.html';
+  const apiBase = opts.apiBase ?? DEFAULT_API_BASE;
+  const html = await buildLivePage({ apiBase });
+  await mkdir(dirname(resolve(out)), { recursive: true });
+  await writeFile(out, html);
+  console.log(`data-free Pages UI written: ${out}`);
+  console.log(`It reads data from ${apiBase}/api/data; start local backend with: ulens serve --origin https://<user>.github.io`);
 }
 
 main().catch(err => { console.error(err.message ?? err); process.exit(1); });

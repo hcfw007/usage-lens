@@ -179,6 +179,14 @@
   .mast h1 { font: 650 clamp(26px, 3vw, 34px)/1.15 var(--sans); letter-spacing: -.035em; }
   .mast h1 i { font: 450 .58em/1 var(--sans); color: var(--ink3); margin-left: 10px; }
   .meta { font: 11px/1.7 var(--mono); color: var(--ink3); }
+  .head-right { display: flex; align-items: center; gap: 18px; }
+  .live-state { font: 11px var(--mono); color: var(--green); }
+  .live-state::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: currentColor; }
+  .live-state.stale { color: var(--red); }
+  .live-state.static { color: var(--ink3); }
+  .refresh-btn { color: var(--blue); background: none; border: 1px solid var(--rule); border-radius: 4px; padding: 5px 9px; font: 11px var(--sans); cursor: pointer; }
+  .refresh-btn:hover { background: var(--blue-soft); }
+  .refresh-btn:disabled { opacity: .5; cursor: wait; }
   .rule2 { display: none; }
   .lede {
     max-width: none; margin: 22px 0 20px; padding: 14px 18px;
@@ -245,6 +253,7 @@
     .stat, .stat:first-child { border: 1px solid var(--rule2); padding: 12px; }
     .bar { position: static; margin: 0 0 12px; }
     .bar .metric { margin-left: 0; }
+    .head-right { align-items: flex-end; flex-direction: column-reverse; gap: 4px; }
     section { padding: 14px 12px; overflow-x: auto; }
     .sh small { max-width: 42%; text-align: right; }
     .def { margin-left: 0; }
@@ -259,7 +268,7 @@
       <div class="kicker">cc-switch · usage report</div>
       <h1>Usage Lens<i>用量透视</i></h1>
     </div>
-    <div class="meta" id="meta"></div>
+    <div class="head-right"><div class="live-state static" id="live-state">数据快照</div><button type="button" class="refresh-btn" id="refresh-btn" hidden>刷新</button><div class="meta" id="meta"></div></div>
   </header>
   <hr class="rule2">
   <p class="lede" id="lede"></p>
@@ -271,7 +280,11 @@
     <p>token 数由 cc-switch 从各工具的会话日志解析得到，不是上游计费接口的返回值。</p>
   </footer>
 </div>
-<script>const DATA = /*__DATA__*/null;</script>
+<script>
+let DATA = /*__DATA__*/null;
+const LIVE_MODE = /*__LIVE__*/false;
+const API_BASE = /*__API_BASE__*/'';
+</script>
 <script>
 'use strict';
 const METRICS = {
@@ -320,10 +333,13 @@ const PRESETS = [7, 14, 30];
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 const $ = id => document.getElementById(id);
 
-const ROWS = DATA ? DATA.rows.map(([date, a, m, s, requests, input, output, cacheRead, cacheCreation, cost]) => ({
-  date, app: DATA.apps[a], model: DATA.models[m], session: DATA.sessions[s], title: DATA.titles[s],
-  requests, input, output, cacheRead, cacheCreation, cost,
-})) : [];
+function decodeRows(data) {
+  return data ? data.rows.map(([date, a, m, s, requests, input, output, cacheRead, cacheCreation, cost]) => ({
+    date, app: data.apps[a], model: data.models[m], session: data.sessions[s], title: data.titles[s],
+    requests, input, output, cacheRead, cacheCreation, cost,
+  })) : [];
+}
+let ROWS = decodeRows(DATA);
 
 const state = { start: null, end: null, metric: 'real', sort: {} };
 
@@ -416,7 +432,7 @@ function writeHash() {
 function renderHead(total, n) {
   const gen = new Date(DATA.generated);
   $('meta').innerHTML = `${esc(state.start)} — ${esc(state.end)} · ${n} 天<br>` +
-    `快照生成于 ${gen.toLocaleDateString('sv-SE')} ${gen.toTimeString().slice(0, 5)}<br>` +
+    `${LIVE_MODE ? '数据更新时间' : '快照生成于'} ${gen.toLocaleDateString('sv-SE')} ${gen.toTimeString().slice(0, 5)}<br>` +
     `可选范围 ${esc(DATA.start)} — ${esc(DATA.end)}`;
   const real = METRICS.real.fn(total), fresh = METRICS.fresh.fn(total);
   if (!total.requests) { $('lede').textContent = '这段时间没有用量记录。'; return; }
@@ -672,14 +688,75 @@ function update() {
   renderTable('t-apps', group(rows, r => r.app), r => esc(r.key) + tag(r));
 }
 
-if (!DATA || !ROWS.length) {
-  document.querySelector('.page').insertAdjacentHTML('beforeend',
-    '<div class="empty">本页没有内嵌数据。请运行 <code>ulens html</code> 生成报告。</div>');
-} else {
+function setLiveState(text, kind, error = '') {
+  const el = $('live-state');
+  el.textContent = text;
+  el.className = `live-state ${kind}`;
+  el.title = error;
+}
+
+async function refreshLive() {
+  const button = $('refresh-btn');
+  button.disabled = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/data`, { cache: 'no-store' });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(detail.error || `HTTP ${response.status}`);
+    }
+    const fresh = await response.json();
+    if (!Array.isArray(fresh.rows) || !fresh.start || !fresh.end) throw new Error('Invalid response from local server');
+
+    if (!DATA) {
+      DATA = fresh;
+      ROWS = decodeRows(DATA);
+      state.start = DATA.start;
+      state.end = DATA.end;
+      readHash();
+    } else {
+      const followedLatest = state.end === DATA.end;
+      const span = daysBetween(state.start, state.end);
+      DATA = fresh;
+      ROWS = decodeRows(DATA);
+      if (followedLatest) {
+        state.end = DATA.end;
+        state.start = shift(state.end, -(Math.min(span, 30) - 1));
+      } else {
+        state.start = clampDate(state.start);
+        state.end = clampDate(state.end);
+        if (state.start > state.end) state.start = state.end;
+      }
+    }
+    update();
+    const time = new Date(DATA.generated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setLiveState(`LIVE · ${time}`, '');
+    button.title = '手动刷新';
+  } catch (error) {
+    setLiveState('连接本机后端失败', 'stale', error.message);
+    if (!DATA) {
+      $('main').innerHTML = `<div class="empty">无法连接用量数据后端。请先在本机运行 <code>ulens serve</code>。<br><small>${esc(error.message)}</small></div>`;
+    }
+  } finally {
+    button.disabled = false;
+  }
+}
+
+if (LIVE_MODE) {
+  $('live-state').textContent = '连接中';
+  $('live-state').className = 'live-state';
+  $('refresh-btn').hidden = false;
+  $('refresh-btn').onclick = refreshLive;
+  refreshLive();
+  window.setInterval(refreshLive, 60_000);
+} else if (DATA) {
+  setLiveState('数据快照', 'static');
   readHash();
   update();
-  window.addEventListener('hashchange', () => { readHash(); update(); });
+} else {
+  document.querySelector('.page').insertAdjacentHTML('beforeend',
+    '<div class="empty">本页没有内嵌数据。请运行 <code>ulens html</code> 生成报告。</div>');
 }
+window.addEventListener('hashchange', () => { if (DATA) { readHash(); update(); } });
 </script>
 </body>
 </html>
