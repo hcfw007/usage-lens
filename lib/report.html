@@ -113,6 +113,22 @@
   @keyframes grow { from { transform: scaleY(0); } }
   .chart .hit { fill: transparent; cursor: crosshair; }
   .chart .hit:hover { fill: var(--blue-soft); }
+  .chart .hit[data-day] { cursor: pointer; }
+  .daybar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; font: 12.5px var(--mono); color: var(--ink3); }
+  .daybar button {
+    font: 500 13px/1 var(--sans); color: var(--ink); background: none; border: 1px solid var(--rule);
+    border-radius: 3px; padding: 6px 11px; cursor: pointer;
+  }
+  .daybar button:hover { background: var(--tint); }
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; z-index: 20;
+    transform: translate(-50%, 8px); opacity: 0; pointer-events: none;
+    max-width: min(90vw, 480px); padding: 10px 16px; border-radius: 4px;
+    background: var(--ink); color: var(--paper); font-size: 13px; line-height: 1.5;
+    transition: opacity .18s, transform .18s;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
   .legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12.5px; color: var(--ink2); margin-top: 6px; }
   .legend i { display: inline-block; width: 14px; height: 9px; margin-right: 6px; vertical-align: 0; }
   .tip {
@@ -359,21 +375,23 @@ function slotRange(slot) {
   return `${clock(slot * 30)}–${clock((slot + 1) * 30)}`;
 }
 function decodeIntraday(data) {
-  if (!data) return [];
-  const buckets = Array.from({ length: 48 }, (_, slot) => ({
-    ...zero(slot), slot, date: data.end, key: slotRange(slot),
-  }));
-  for (const [slot, a, m, s, requests, input, output, cacheRead, cacheCreation, cost] of data.intraday ?? []) {
-    add(buckets[slot], {
-      requests, input, output, cacheRead, cacheCreation, cost,
-    });
+  const byDay = new Map();
+  for (const [date, slot, a, m, requests, input, output, cacheRead, cacheCreation, cost] of data?.intraday ?? []) {
+    let buckets = byDay.get(date);
+    if (!buckets) {
+      buckets = Array.from({ length: 48 }, (_, s) => ({ ...zero(s), slot: s, date, key: slotRange(s) }));
+      byDay.set(date, buckets);
+    }
+    add(buckets[slot], { requests, input, output, cacheRead, cacheCreation, cost });
   }
-  return buckets;
+  return byDay;
 }
 let ROWS = decodeRows(DATA);
 let INTRADAY = decodeIntraday(DATA);
+/** True only for days that actually have request-level 30-minute detail. */
+const hasIntraday = date => (INTRADAY.get(date) ?? []).some(b => b.requests > 0);
 
-const state = { start: null, end: null, metric: 'real', sort: {} };
+const state = { start: null, end: null, metric: 'real', sort: {}, prev: null };
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -415,7 +433,11 @@ function zero(key) {
 }
 // A raw row (day x app x model x session) with input but no cache read/write at all
 // is treated as "cache not reported" (e.g. kiro), not as a genuine 0% hit.
-const isUnreported = r => r.input > 0 && r.cacheRead === 0 && r.cacheCreation === 0;
+// Declared as a function so it is hoisted: decodeIntraday runs at top level in
+// static reports, before this point in the script.
+function isUnreported(r) {
+  return r.input > 0 && r.cacheRead === 0 && r.cacheCreation === 0;
+}
 function add(acc, r) {
   acc.requests += r.requests; acc.input += r.input; acc.output += r.output;
   acc.cacheRead += r.cacheRead; acc.cacheCreation += r.cacheCreation; acc.cost += r.cost;
@@ -527,6 +549,7 @@ function renderBar() {
     state.start = b.dataset.d === 'all'
       ? DATA.start
       : clampDate(shift(DATA.end, -(Number(b.dataset.d) - 1))) ?? DATA.start;
+    state.prev = null;
     update();
   });
   $('bar').querySelectorAll('[data-m]').forEach(b => b.onclick = () => { state.metric = b.dataset.m; update(); });
@@ -535,6 +558,7 @@ function renderBar() {
     let b = clampDate($('d-to').value) ?? state.end;
     if (a > b) [a, b] = [b, a];
     state.start = a; state.end = b;
+    state.prev = null;
     update();
   };
   $('d-from').onchange = onDate;
@@ -596,7 +620,8 @@ function renderChart(days, { intraday = false } = {}) {
     }
   });
   days.forEach((d, i) => {
-    s += `<rect class="hit" data-i="${i}" x="${L + i * step}" y="${T}" width="${step}" height="${ih}"/>`;
+    const day = intraday ? '' : ` data-day="${d.key}"`;
+    s += `<rect class="hit" data-i="${i}"${day} x="${L + i * step}" y="${T}" width="${step}" height="${ih}"/>`;
   });
   s += '</svg><div class="tip" id="tip" role="tooltip"></div>';
   $('chart').innerHTML = s;
@@ -608,8 +633,12 @@ function renderChart(days, { intraday = false } = {}) {
 function bindTip(days, { intraday = false } = {}) {
   const tip = $('tip'), box = $('chart');
   box.querySelectorAll('.hit').forEach(el => {
+    const d = days[Number(el.dataset.i)];
+    if (!intraday) {
+      el.onclick = () => openDay(d.key);
+      el.setAttribute('aria-label', `${d.key}，点击查看当天 24 小时`);
+    }
     el.onmouseenter = () => {
-      const d = days[Number(el.dataset.i)];
       const line = (k, v) => `<div><span>${k}</span><span>${v}</span></div>`;
       const heading = intraday ? `${d.date} · ${d.key}` : `${d.key} 周${weekday(d.key)}`;
       tip.innerHTML = `<b>${heading}</b>` +
@@ -630,6 +659,50 @@ function bindTip(days, { intraday = false } = {}) {
     };
     el.onmouseleave = () => tip.classList.remove('show');
   });
+}
+
+let toastTimer = 0;
+/** Transient bottom-center message; never triggers a re-render. */
+function showToast(message) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+/** Drill into one day's 30-minute view; explain when only daily rollups exist. */
+function openDay(date) {
+  if (!hasIntraday(date)) {
+    showToast(`${date} 没有分时明细：该日只有天级汇总。`);
+    return;
+  }
+  state.prev = { start: state.start, end: state.end };
+  state.start = date;
+  state.end = date;
+  update();
+}
+
+function closeDay() {
+  const prev = state.prev;
+  state.prev = null;
+  if (prev) {
+    state.start = clampDate(prev.start) ?? DATA.start;
+    state.end = clampDate(prev.end) ?? DATA.end;
+    if (state.start > state.end) state.start = state.end;
+  } else {
+    state.end = DATA.end;
+    state.start = clampDate(shift(DATA.end, -(30 - 1))) ?? DATA.start;
+  }
+  update();
 }
 const NUM_COLS = [
   ['requests', 'reqs', r => r.requests, r => r.requests.toLocaleString()],
@@ -709,8 +782,8 @@ function update() {
   writeHash();
   const rows = inRange();
   const days = dayBuckets(rows);
-  const isIntraday = state.start === DATA.end && state.end === DATA.end;
-  const chartRows = isIntraday ? INTRADAY : days;
+  const isIntraday = state.start === state.end && hasIntraday(state.start);
+  const chartRows = isIntraday ? INTRADAY.get(state.start) : days;
   const total = rows.reduce(add, zero('total'));
   const n = days.length;
   renderHead(total, n);
@@ -721,8 +794,14 @@ function update() {
     .sort((a, b) => METRICS[state.metric].fn(b) - METRICS[state.metric].fn(a)).slice(0, 20)
     .map(r => ({ ...r, label: r.title || r.key }));
   const m = METRICS[state.metric];
+  const daybar = isIntraday
+    ? `<div class="daybar"><button type="button" id="back-daily">← 返回每日视图</button>` +
+      `<span>${esc(state.start)} · 24 小时视角</span></div>`
+    : '';
   $('main').innerHTML =
-    section('01', isIntraday ? '当日走势' : '每日走势', isIntraday ? '每柱 30 分钟 · 悬停查看时段明细' : '悬停查看当天明细', currentDef(m) +
+    section('01', isIntraday ? '当日走势' : '每日走势',
+      isIntraday ? '每柱 30 分钟 · 悬停查看时段明细' : '悬停查看当天明细 · 点击柱子看 24 小时',
+      currentDef(m) + daybar +
       '<div class="chart" id="chart"></div><div class="legend" id="legend"></div>') +
     foldSection('02', '按模型', '点击展开 · 命中率已排除缓存未上报', '<table id="t-models"></table>') +
     foldSection('03', '按会话', `点击展开 · 按 ${m.label} 取前 20`, '<table id="t-sessions"></table>') +
@@ -730,6 +809,7 @@ function update() {
     section('05', '口径说明', '每个数字是怎么算的', glossary());
 
   renderChart(chartRows, { intraday: isIntraday });
+  if (isIntraday) $('back-daily').onclick = closeDay;
   renderTable('t-models', group(rows, r => r.model), r => esc(r.key) + tag(r));
   renderTable('t-sessions', sessions, r =>
     (r.title ? esc(r.title) : `<span class="id">${esc(r.key)}</span>`) + tag(r) +
@@ -812,7 +892,9 @@ if (LIVE_MODE) {
   document.querySelector('.page').insertAdjacentHTML('beforeend',
     '<div class="empty">本页没有内嵌数据。请运行 <code>ulens html</code> 生成报告。</div>');
 }
-window.addEventListener('hashchange', () => { if (DATA) { readHash(); update(); } });
+window.addEventListener('hashchange', () => {
+  if (DATA) { state.prev = null; readHash(); update(); }
+});
 </script>
 </body>
 </html>

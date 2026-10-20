@@ -69,11 +69,11 @@ async function readRows(filters) {
   }
 }
 
-async function readIntraday(date, filters) {
+async function readIntraday(range, filters) {
   const dbPath = await resolveCCSwitchDb(filters.db);
   const db = await openReadOnly(dbPath);
   try {
-    return loadIntradayRows(db, { date });
+    return loadIntradayRows(db, range);
   } finally {
     await dispose(db);
   }
@@ -94,7 +94,7 @@ async function writeHtmlReport(opts) {
   const { start, end } = reportWindow(opts);
   const rows = await readRows({ ...opts, from: start, to: end });
   if (!rows.length) { console.log(`no data between ${start} and ${end}`); return; }
-  const intraday = await readIntraday(end, opts);
+  const intraday = await readIntraday({ from: start, to: end }, opts);
 
   const sessions = await withSessionTitles(aggregate(rows, 'session'), () => openReadOnly(OPENCODE_DB));
   const titles = new Map(sessions.filter(s => s.title).map(s => [s.key, s.title]));
