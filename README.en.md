@@ -35,9 +35,17 @@ Days that only have daily rollups (no request-level detail) show a notice instea
 ## Live local dashboard
 
 ```bash
+npm run serve                    # run in foreground at http://127.0.0.1:4782
+npm run serve -- --port 4783     # use a custom port
+npm run serve:background         # start in the background
+npm run serve:stop               # stop the background server
 ulens serve                      # http://127.0.0.1:4782
 ulens serve --db /path/to/cc-switch.db
 ```
+
+The server runs in the foreground so logs stay visible; press Ctrl+C to stop it.
+Background mode stores its PID and log at `~/.usage-lens/serve.pid` and `~/.usage-lens/serve.log`.
+Pass a custom port with `npm run serve:background -- --port 4783`; the stop command sends SIGTERM.
 
 The HTML template is stored in this repository; usage data is fetched from the same-origin local backend and is never uploaded. The server binds only to `127.0.0.1`. The page refreshes every five minutes and has a manual refresh button. The default range is 30 days, with quick presets for Today / Last 7 / 14 / 30 / 60 days and All (from the earliest day readable in the database). Model, session, and app rankings are collapsible and start collapsed.
 Today is charted in 30-minute intervals; longer ranges are grouped by day.

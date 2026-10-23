@@ -49,9 +49,17 @@ ulens html --all              # 覆盖数据库里所有可读历史
 ### 实时本地页面
 
 ```bash
+npm run serve                 # 前台启动，打开 http://127.0.0.1:4782
+npm run serve -- --port 4783  # 自定义端口
+npm run serve:background     # 后台启动
+npm run serve:stop           # 停止后台服务
 ulens serve                 # 打开 http://127.0.0.1:4782，每 5 分钟自动刷新，也可手动刷新
 ulens serve --db /path/to/cc-switch.db
 ```
+
+服务以前台方式运行，终端会显示日志，按 Ctrl+C 停止。
+后台模式的 PID 文件和日志分别位于 `~/.usage-lens/serve.pid` 和 `~/.usage-lens/serve.log`；
+可用 `npm run serve:background -- --port 4783` 指定端口。停止命令会向服务发送 SIGTERM。
 
 项目中的 HTML 是不含用量数据的模板，数据仅由同源的本机后端读取并返回给本机浏览器。
 服务只监听回环地址 `127.0.0.1`；不会将数据库或用量数据上传到 GitHub 或其他服务器。
