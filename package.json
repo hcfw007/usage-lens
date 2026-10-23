@@ -10,6 +10,9 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node bin/cli.js"
+    "start": "node bin/cli.js",
+    "serve": "node bin/cli.js serve",
+    "serve:background": "node bin/serve-background.js start",
+    "serve:stop": "node bin/serve-background.js stop"
   }
 }
