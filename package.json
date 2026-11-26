@@ -13,6 +13,8 @@
     "start": "node bin/cli.js",
     "serve": "node bin/cli.js serve",
     "serve:background": "node bin/serve-background.js start",
-    "serve:stop": "node bin/serve-background.js stop"
+    "serve:stop": "node bin/serve-background.js stop",
+    "test": "node --test --test-concurrency=4 \"test/*.test.js\"",
+    "test:coverage": "node --test --test-concurrency=4 --experimental-test-coverage \"test/*.test.js\""
   }
 }
