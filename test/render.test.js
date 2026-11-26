@@ -57,3 +57,12 @@ test('renderTable renders a header and separators for zero rows', () => {
   assert.ok(lines[2].includes('key'));
   assert.ok(lines[2].includes('cost'));
 });
+
+test('renderTable shows a dash for missing token counts and whole-dollar prices', () => {
+  const row = {
+    key: 'odd', requests: 1,
+    input: 0, output: null, cacheRead: 0, cacheCreation: 0, cost: 150,
+  };
+  const out = renderTable([row], { metric: 'output', dim: 'model' });
+  assert.match(out, /\s-\s+\$150/); // output column renders '-', cost rounds to dollars
+});

@@ -1,5 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { connect } from 'node:net';
 import { join } from 'node:path';
 
 import { createBareDb, createOpencodeDb, createUsageDb, localEpoch, makeTempDir } from './helpers/fixtures.js';
@@ -136,6 +137,22 @@ test('rejects non-local Host headers', async () => {
   const res = await request(mainServer.port, { path: '/', headers: { Host: 'evil.example.com' } });
   assert.equal(res.status, 403);
   assert.equal(res.body, 'Forbidden host');
+});
+
+test('rejects requests that carry no Host header at all', async () => {
+  // HTTP/1.0 has no Host requirement, so a raw request can omit it entirely.
+  const response = await new Promise((resolve, reject) => {
+    const socket = connect(mainServer.port, '127.0.0.1', () => {
+      socket.write('GET / HTTP/1.0\r\n\r\n');
+    });
+    let data = '';
+    socket.setEncoding('utf8');
+    socket.on('data', chunk => { data += chunk; });
+    socket.on('end', () => resolve(data));
+    socket.on('error', reject);
+  });
+  assert.match(response, /403 Forbidden/);
+  assert.ok(response.includes('Forbidden host'));
 });
 
 test('accepts localhost Host headers', async () => {

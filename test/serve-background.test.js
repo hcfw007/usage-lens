@@ -145,3 +145,64 @@ test('start launches a detached server that stop shuts down gracefully', async (
   await assert.rejects(access(pidFile));
   await assert.rejects(request(port, { path: '/' })); // the server is gone
 });
+
+test('stop surfaces non-ENOENT pid file read errors', async () => {
+  try {
+    await mkdir(pidFile, { recursive: true }); // serve.pid as a directory: reads raise EISDIR
+    const { code, stderr } = await spawnBin('serve-background.js', ['stop'], ENV()).done;
+    assert.equal(code, 1);
+    assert.match(stderr, /EISDIR|illegal operation on a directory/);
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('stop propagates pid values that cannot be signalled', async () => {
+  try {
+    await mkdir(stateDir, { recursive: true });
+    // A safe integer beyond int32: readPid accepts it, but kill() raises
+    // ERR_INVALID_ARG_TYPE — neither EPERM nor ESRCH — so isRunning rethrows.
+    await writeFile(pidFile, '1099511627776\n');
+    const { code, stderr } = await spawnBin('serve-background.js', ['stop'], ENV()).done;
+    assert.equal(code, 1);
+    assert.match(stderr, /must be of type number/);
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('start treats a recorded pid owned by another user as already running', async () => {
+  // PID 1 always exists and is owned by root. process.kill(1, 0) probes with
+  // signal 0, which delivers nothing: an unprivileged caller gets EPERM and
+  // isRunning reports "running". start() never signals the recorded pid, so
+  // this is safe even when the suite runs as root (the probe then just
+  // succeeds and the same message is printed).
+  try {
+    await mkdir(stateDir, { recursive: true });
+    await writeFile(pidFile, '1\n');
+    const { code, stdout } = await spawnBin('serve-background.js', ['start'], ENV()).done;
+    assert.equal(code, 0);
+    assert.match(stdout, /Usage Lens is already running \(PID 1\)\./);
+    await assert.rejects(access(logFile)); // nothing was spawned
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('stop gives up with an error when the server ignores SIGTERM', async () => {
+  const stubborn = spawn(process.execPath, [
+    '-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);",
+  ]);
+  await new Promise(resolve => stubborn.once('spawn', resolve));
+  try {
+    await mkdir(stateDir, { recursive: true });
+    await writeFile(pidFile, `${stubborn.pid}\n`);
+    const { code, stderr } = await spawnBin('serve-background.js', ['stop'], ENV()).done;
+    assert.equal(code, 1);
+    assert.match(stderr, /did not stop within 5 seconds/);
+    await access(pidFile); // the pid file is kept when the process would not die
+  } finally {
+    stubborn.kill('SIGKILL');
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});

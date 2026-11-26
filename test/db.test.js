@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -208,4 +209,61 @@ test('loadIntradayRows rejects malformed or inverted ranges', async () => {
   } finally {
     await dispose(db);
   }
+});
+
+test('loadIntradayRows accepts every documented range shape', async () => {
+  const db = await openReadOnly(usageDbPath);
+  try {
+    const cases = [
+      [{ from: '2026-10-13' }, n => n > 0], // end day falls back to the start day
+      [{ to: '2026-10-13' }, n => n === 0], // no start day at all
+      [{ from: '2026-10-13', to: '' }, n => n === 0], // empty end overrides the fallback
+      [{ date: '2026-10-13', from: '2026-10-14', to: '2026-10-15' }, n => n > 0], // date wins
+      [{ from: '2026-10-13', to: 'bad' }, n => n === 0], // end fails the format check
+      [{ date: 'bad', from: '2026-10-13' }, n => n === 0], // date takes precedence
+      [{ from: '2026-13-99' }, n => n === 0], // well-formed but not a real day
+      [{ from: '2026-10-13', to: '2026-10-99' }, n => n === 0], // invalid end day
+    ];
+    for (const [range, check] of cases) {
+      assert.equal(check(loadIntradayRows(db, range).length), true, JSON.stringify(range));
+    }
+  } finally {
+    await dispose(db);
+  }
+});
+
+test('openReadOnly rethrows open errors that are not retryable', async () => {
+  // A directory opens with "disk I/O error", which matches neither
+  // /unable to open|locked|busy/ nor anything a snapshot copy could fix.
+  const notADb = join(dir, 'not-a-db-dir');
+  await mkdir(notADb, { recursive: true });
+  await assert.rejects(openReadOnly(notADb), /disk I\/O error|unable to open/);
+});
+
+test('openReadOnly retries a snapshot copy for openable-later errors', async (t) => {
+  // A missing file fails with "unable to open database file": the retryable
+  // branch runs (temp copy), and the copy itself then fails with ENOENT.
+  // The successful-snapshot path after the copy is not constructible without
+  // mocking node:sqlite: its open is lazy, so neither lock conflicts ("locked")
+  // nor file corruption surface at construction, and every construction-time
+  // failure we can produce (missing, unreadable) fails cp() identically.
+  const leakedBefore = new Set((await readdir(tmpdir())).filter(n => n.startsWith('ccusage-')));
+  t.after(async () => {
+    for (const name of (await readdir(tmpdir())).filter(n => n.startsWith('ccusage-'))) {
+      if (!leakedBefore.has(name)) await rm(join(tmpdir(), name), { recursive: true, force: true });
+    }
+  });
+  await assert.rejects(openReadOnly(join(dir, 'gone.db')), /ENOENT|no such file/i);
+});
+
+test('dispose removes the snapshot temp directory recorded on the db handle', async () => {
+  // openReadOnly attaches _tempDir to snapshot handles. Reaching a successful
+  // snapshot through openReadOnly is not constructible (see the test above),
+  // so exercise dispose's documented cleanup contract with an injected handle.
+  const snapshotDir = join(dir, 'snapshot-tmp');
+  await mkdir(snapshotDir, { recursive: true });
+  let closed = false;
+  await dispose({ close: () => { closed = true; }, _tempDir: snapshotDir });
+  assert.equal(closed, true);
+  await assert.rejects(access(snapshotDir));
 });

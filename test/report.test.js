@@ -60,6 +60,37 @@ test('reportWindow honors explicit ranges and clamps end to start', () => {
   );
 });
 
+test('reportWindow keeps a single-day range as-is', () => {
+  assert.deepEqual(
+    reportWindow({ from: '2026-03-05', to: '2026-03-05' }),
+    { start: '2026-03-05', end: '2026-03-05', clamped: false },
+  );
+});
+
+test('buildReportData defaults missing metrics to zero and models to (unknown)', () => {
+  const sparse = [{ date: '2026-10-13', app: 'claude' }]; // every other field absent
+  const data = buildReportData(sparse, { start: '2026-10-01', end: '2026-10-31' });
+  assert.deepEqual(data.models, ['(unknown)']);
+  assert.deepEqual(data.sessions, ['']);
+  assert.deepEqual(data.rows, [['2026-10-13', 0, 0, 0, 0, 0, 0, 0, 0, 0]]);
+});
+
+test('buildReportData defaults missing intraday fields the same way', () => {
+  const data = buildReportData([], {
+    start: '2026-10-01', end: '2026-10-31',
+    intraday: [{ date: '2026-10-13', slot: 24, app: 'claude' }],
+  });
+  assert.deepEqual(data.intraday, [['2026-10-13', 24, 0, 0, 0, 0, 0, 0, 0, 0]]);
+});
+
+test('buildReport embeds defaulted rows through the template placeholder', async () => {
+  const html = await buildReport([{ date: '2026-10-13', app: 'claude' }], {
+    start: '2026-10-01', end: '2026-10-31',
+  });
+  assert.equal(html.includes('/*__DATA__*/null'), false);
+  assert.equal(html.includes('["2026-10-13",0,0,0,0,0,0,0,0,0]'), true);
+});
+
 test('buildReportData filters to the range and dictionary-encodes rows', () => {
   const data = buildReportData(ROWS, { start: '2026-10-01', end: '2026-10-31', titles: TITLES });
   assert.ok(!Number.isNaN(Date.parse(data.generated)));

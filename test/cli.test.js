@@ -1,9 +1,10 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, access } from 'node:fs/promises';
+import { createServer } from 'node:net';
+import { mkdir, readFile, access } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { createUsageDb, localEpoch, makeTempDir } from './helpers/fixtures.js';
+import { createOpencodeDb, createUsageDb, localEpoch, makeTempDir } from './helpers/fixtures.js';
 import { runCli } from './helpers/cli.js';
 
 let dir;
@@ -115,4 +116,58 @@ test('validates --port before starting the server', async () => {
   const { code, stderr } = await runCli(['serve', '--port', '0', '--db', usageDbPath], ENV());
   assert.equal(code, 1);
   assert.match(stderr, /--port must be/);
+});
+
+test('filters rows by app with --app', async () => {
+  const { code, stdout } = await runCli(['app', '--app', 'claude', '--db', usageDbPath], ENV());
+  assert.equal(code, 0);
+  assert.match(stdout, /claude/);
+  assert.equal(stdout.includes('opencode'), false);
+});
+
+test('dimension commands report "no data" for empty filters', async () => {
+  const { code, stdout } = await runCli(['day', '--db', emptyDbPath], ENV());
+  assert.equal(code, 0);
+  assert.match(stdout, /no data for the given filters/);
+});
+
+test('html defaults to cc-usage-report.html in the working directory', async () => {
+  const cwd = join(dir, 'html-default');
+  await mkdir(cwd, { recursive: true });
+  const args = ['html', '--db', usageDbPath, '--from', '2026-10-12', '--to', '2026-10-14'];
+  const { code, stdout } = await runCli(args, ENV(), cwd);
+  assert.equal(code, 0);
+  assert.match(stdout, /report written: cc-usage-report\.html/);
+  const html = await readFile(join(cwd, 'cc-usage-report.html'), 'utf8');
+  assert.equal(html.includes('/*__DATA__*/null'), false);
+});
+
+test('html embeds joined session titles', async () => {
+  const opencodeDb = join(dir, 'opencode-titles.db');
+  createOpencodeDb(opencodeDb, [{ id: 'ses_abc', title: 'My titled session' }]);
+  const out = join(dir, 'titled-report.html');
+  const { code } = await runCli(
+    ['html', '--db', usageDbPath, '--from', '2026-10-12', '--to', '2026-10-14', '--out', out],
+    { ...ENV(), OPENCODE_DB: opencodeDb },
+  );
+  assert.equal(code, 0);
+  assert.ok((await readFile(out, 'utf8')).includes('My titled session'));
+});
+
+test('serve falls back to the default port when --port is omitted', async () => {
+  // Occupy 4782 so the spawned server fails fast with EADDRINUSE: the default
+  // port resolution still executes. If something else already owns the port,
+  // the bind below fails and the observable outcome is identical.
+  const blocker = createServer();
+  const blocked = await new Promise(resolve => {
+    blocker.once('error', () => resolve(false));
+    blocker.listen(4782, '127.0.0.1', () => resolve(true));
+  });
+  try {
+    const { code, stderr } = await runCli(['serve', '--db', usageDbPath], ENV());
+    assert.equal(code, 1);
+    assert.match(stderr, /EADDRINUSE|address already in use/i);
+  } finally {
+    if (blocked) await new Promise(resolve => blocker.close(resolve));
+  }
 });
