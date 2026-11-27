@@ -12,9 +12,14 @@ node bin/cli.js session --metric cost --limit 10
 node bin/cli.js html --out /tmp/usage.html  # static, self-contained
 node bin/cli.js serve --port 4783           # localhost UI
 npm link                                    # only way to get `ulens`
+npm test                                    # node:test + node:assert, zero-dep
+npm run test:coverage                       # same + --experimental-test-coverage
 ```
 
-There is **no test, lint, typecheck, or build script** and `.github/workflows` is empty.
+Tests live in `test/*.test.js` and build throwaway SQLite fixtures in temp dirs
+(`test/helpers/`), so they are repeatable against any machine. There is **no lint,
+typecheck, or build script**; CI (`.github/workflows/test.yml`) runs the test suite
+with coverage on Node LTS.
 Verify changes by running the CLI/server against a real cc-switch DB (or point
 `CC_SWITCH_DB` / `--db` at a fixture copy). DB path precedence: `--db` > `CC_SWITCH_DB` >
 `CC_SWITCH_HOME` > platform auto-detect.
